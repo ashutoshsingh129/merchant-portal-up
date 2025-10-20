@@ -1,0 +1,8 @@
+node_modules/
+merchant-portal/node_modules/
+server/node_modules/
+server/.env
+npm-debug.log*
+yarn-error.log*
+server/dist/
+merchant-portal/build/
