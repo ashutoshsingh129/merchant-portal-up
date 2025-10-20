@@ -74,44 +74,41 @@ const SummaryLabel = styled(Typography)(({ theme }) => ({
 }));
 
 const StyledTable = styled(Table)(({ theme }) => ({
-    minWidth: 1200, // force horizontal scroll on small viewports
     '& .MuiTableCell-root': {
-        borderBottom: '1px solid #f1f5f9',
+        borderBottom: '1px solid #e2e8f0',
         padding: theme.spacing(1.5),
-        whiteSpace: 'nowrap',
+        whiteSpace: 'nowrap', // Prevent text wrapping
     },
     '& .MuiTableHead-root .MuiTableCell-root': {
         backgroundColor: '#f8fafc',
         fontWeight: 600,
-        fontSize: '0.75rem',
-        color: '#64748b',
-        textTransform: 'uppercase',
-        letterSpacing: '0.05em',
-        whiteSpace: 'nowrap',
+        color: '#374151',
+        fontSize: '0.875rem',
+        whiteSpace: 'nowrap', // Prevent header text wrapping
+        minWidth: '120px', // Set minimum width for headers
     },
-}));
-
-const StatusChip = styled(Chip)(({ theme }) => ({
-    fontSize: '0.75rem',
-    height: 24,
-    fontWeight: 500,
-}));
-
-const PaymentMethodBox = styled(Box)(({ theme }) => ({
-    display: 'flex',
-    alignItems: 'center',
-    gap: theme.spacing(1),
+    // Set specific widths for columns
+    '& .MuiTableCell-root:nth-of-type(1)': { minWidth: '120px' }, // Amount
+    '& .MuiTableCell-root:nth-of-type(2)': { minWidth: '120px' }, // Status
+    '& .MuiTableCell-root:nth-of-type(3)': { minWidth: '150px' }, // Payment Method
+    '& .MuiTableCell-root:nth-of-type(4)': { minWidth: '120px' }, // Amount Received
+    '& .MuiTableCell-root:nth-of-type(5)': { minWidth: '120px' }, // Capturable
+    '& .MuiTableCell-root:nth-of-type(6)': { minWidth: '140px' }, // Capture Method
+    '& .MuiTableCell-root:nth-of-type(7)': { minWidth: '140px' }, // Confirmation
+    '& .MuiTableCell-root:nth-of-type(8)': { minWidth: '120px' }, // PM Types
+    '& .MuiTableCell-root:nth-of-type(9)': { minWidth: '150px' }, // Description
+    '& .MuiTableCell-root:nth-of-type(10)': { minWidth: '150px' }, // Customer
+    '& .MuiTableCell-root:nth-of-type(11)': { minWidth: '150px' }, // Account
+    '& .MuiTableCell-root:nth-of-type(12)': { minWidth: '140px' }, // Date
 }));
 
 const CardBrandBox = styled(Box)(({ theme }) => ({
-    width: 24,
-    height: 16,
-    backgroundColor: '#1a202c',
-    borderRadius: 2,
-    display: 'flex',
+    display: 'inline-flex',
     alignItems: 'center',
-    justifyContent: 'center',
-    color: 'white',
+    gap: theme.spacing(1),
+    padding: `${theme.spacing(0.5)} ${theme.spacing(1)}`,
+    backgroundColor: '#f3f4f6',
+    borderRadius: theme.spacing(0.5),
     fontSize: '0.625rem',
     fontWeight: 'bold',
 }));
@@ -145,8 +142,10 @@ const Payments: React.FC = () => {
             setLoading(true);
             setError(null);
 
-            // Use the optimized method that fetches both data in a single API call
-            const response = await stripeService.getTransactionsWithSummary();
+            // Use the new method that fetches from ALL accounts (platform + Connect)
+            const response = await stripeService.getAllTransactionsWithSummary({
+                limit: 500, // Show more transactions from all accounts
+            });
 
             if (response.success) {
                 setTransactions(response.data.transactions.data);
@@ -169,38 +168,39 @@ const Payments: React.FC = () => {
     const getStatusIcon = (status: string) => {
         switch (status) {
             case 'succeeded':
-                return <CheckCircle sx={{ fontSize: 16, color: '#10b981' }} />;
+                return <CheckCircle sx={{ color: '#10b981', fontSize: 16 }} />;
             case 'pending':
-                return <Schedule sx={{ fontSize: 16, color: '#f59e0b' }} />;
+                return <Schedule sx={{ color: '#f59e0b', fontSize: 16 }} />;
             case 'failed':
-                return <Error sx={{ fontSize: 16, color: '#ef4444' }} />;
-            case 'refunded':
-                return <Refresh sx={{ fontSize: 16, color: '#6b7280' }} />;
+                return <Error sx={{ color: '#ef4444', fontSize: 16 }} />;
             case 'canceled':
-                return <Cancel sx={{ fontSize: 16, color: '#ef4444' }} />;
+                return <Cancel sx={{ color: '#ef4444', fontSize: 16 }} />;
             default:
-                return <Schedule sx={{ fontSize: 16, color: '#6b7280' }} />;
+                return <Schedule sx={{ color: '#6b7280', fontSize: 16 }} />;
         }
     };
 
-    const getCardBrandLogo = (brand: string) => {
-        switch (brand.toLowerCase()) {
-            case 'visa':
-                return 'VISA';
-            case 'mastercard':
-                return 'MC';
-            case 'amex':
-                return 'AMEX';
-            case 'discover':
-                return 'DISC';
+    const getStatusColor = (status: string) => {
+        switch (status) {
+            case 'succeeded':
+                return '#10b981';
+            case 'pending':
+                return '#f59e0b';
+            case 'failed':
+                return '#ef4444';
+            case 'canceled':
+                return '#ef4444';
             default:
-                return brand.substring(0, 4).toUpperCase();
+                return '#6b7280';
         }
     };
 
     if (loading) {
         return (
             <StyledContainer>
+                <HeaderSection>
+                    <PageTitle>Payments</PageTitle>
+                </HeaderSection>
                 <Box
                     display="flex"
                     justifyContent="center"
@@ -256,28 +256,14 @@ const Payments: React.FC = () => {
                 <Grid size={{ xs: 12, sm: 6, md: 2 }}>
                     <SummaryCard
                         className={
-                            selectedSummary === 'refunded' ? 'selected' : ''
+                            selectedSummary === 'pending' ? 'selected' : ''
                         }
-                        onClick={() => handleSummaryClick('refunded')}
+                        onClick={() => handleSummaryClick('pending')}
                         sx={{ cursor: 'pointer' }}
                     >
                         <SummaryCardContent>
-                            <SummaryNumber>{summary.refunded}</SummaryNumber>
-                            <SummaryLabel>Refunded</SummaryLabel>
-                        </SummaryCardContent>
-                    </SummaryCard>
-                </Grid>
-                <Grid size={{ xs: 12, sm: 6, md: 2 }}>
-                    <SummaryCard
-                        className={
-                            selectedSummary === 'disputed' ? 'selected' : ''
-                        }
-                        onClick={() => handleSummaryClick('disputed')}
-                        sx={{ cursor: 'pointer' }}
-                    >
-                        <SummaryCardContent>
-                            <SummaryNumber>{summary.disputed}</SummaryNumber>
-                            <SummaryLabel>Disputed</SummaryLabel>
+                            <SummaryNumber>{summary.pending}</SummaryNumber>
+                            <SummaryLabel>Pending</SummaryLabel>
                         </SummaryCardContent>
                     </SummaryCard>
                 </Grid>
@@ -298,6 +284,20 @@ const Payments: React.FC = () => {
                 <Grid size={{ xs: 12, sm: 6, md: 2 }}>
                     <SummaryCard
                         className={
+                            selectedSummary === 'disputed' ? 'selected' : ''
+                        }
+                        onClick={() => handleSummaryClick('disputed')}
+                        sx={{ cursor: 'pointer' }}
+                    >
+                        <SummaryCardContent>
+                            <SummaryNumber>{summary.disputed}</SummaryNumber>
+                            <SummaryLabel>Disputed</SummaryLabel>
+                        </SummaryCardContent>
+                    </SummaryCard>
+                </Grid>
+                <Grid size={{ xs: 12, sm: 6, md: 2 }}>
+                    <SummaryCard
+                        className={
                             selectedSummary === 'uncaptured' ? 'selected' : ''
                         }
                         onClick={() => handleSummaryClick('uncaptured')}
@@ -312,154 +312,174 @@ const Payments: React.FC = () => {
             </Grid>
 
             {/* Transactions Table */}
-            <TableContainer
-                component={Paper}
-                sx={{ borderRadius: 2, mx: 2, overflowX: 'auto' }}
-            >
-                <StyledTable>
-                    <TableHead>
-                        <TableRow>
-                            <TableCell padding="checkbox"></TableCell>
-                            <TableCell>Amount</TableCell>
-                            <TableCell>Payment method</TableCell>
-                            <TableCell>Amount received</TableCell>
-                            <TableCell>Capturable</TableCell>
-                            <TableCell>Capture method</TableCell>
-                            <TableCell>Confirmation</TableCell>
-                            <TableCell>PM types</TableCell>
-                            <TableCell>Description</TableCell>
-                            <TableCell>Customer</TableCell>
-                            <TableCell>Date</TableCell>
-                            <TableCell>Settlement merchant</TableCell>
-                        </TableRow>
-                    </TableHead>
-                    <TableBody>
-                        {transactions.map(transaction => (
-                            <TableRow key={transaction.id} hover>
-                                <TableCell padding="checkbox">
-                                    <input type="checkbox" />
-                                </TableCell>
-                                <TableCell>
-                                    <Typography
-                                        variant="body2"
-                                        fontWeight={500}
-                                    >
-                                        {stripeService.formatAmount(
-                                            transaction.amount,
-                                            transaction.currency
-                                        )}
-                                    </Typography>
-                                </TableCell>
-                                <TableCell>
-                                    <PaymentMethodBox>
-                                        {getStatusIcon(transaction.status)}
-                                        <StatusChip
-                                            label={transaction.status}
-                                            size="small"
-                                            sx={{
-                                                backgroundColor:
-                                                    stripeService.getStatusColor(
+            <Box sx={{ px: 2 }}>
+                <TableContainer
+                    component={Paper}
+                    sx={{
+                        boxShadow: 'none',
+                        overflowX: 'auto', // Enable horizontal scrolling
+                        minWidth: '100%',
+                    }}
+                >
+                    <StyledTable>
+                        <TableHead>
+                            <TableRow>
+                                <TableCell>Amount</TableCell>
+                                <TableCell>Status</TableCell>
+                                <TableCell>Payment Method</TableCell>
+                                <TableCell>Amount Received</TableCell>
+                                <TableCell>Capturable</TableCell>
+                                <TableCell>Capture Method</TableCell>
+                                <TableCell>Confirmation</TableCell>
+                                <TableCell>Payment Types</TableCell>
+                                <TableCell>Description</TableCell>
+                                <TableCell>Customer</TableCell>
+                                <TableCell>Account</TableCell>
+                                <TableCell>Date</TableCell>
+                            </TableRow>
+                        </TableHead>
+                        <TableBody>
+                            {transactions.map(transaction => (
+                                <TableRow key={transaction.id}>
+                                    <TableCell>
+                                        <Typography
+                                            variant="body2"
+                                            fontWeight={500}
+                                        >
+                                            {stripeService.formatAmount(
+                                                transaction.amount,
+                                                transaction.currency
+                                            )}
+                                        </Typography>
+                                    </TableCell>
+                                    <TableCell>
+                                        <Box
+                                            display="flex"
+                                            alignItems="center"
+                                            gap={1}
+                                        >
+                                            {getStatusIcon(transaction.status)}
+                                            <Typography
+                                                variant="body2"
+                                                sx={{
+                                                    color: getStatusColor(
                                                         transaction.status
                                                     ),
-                                                color: 'white',
-                                            }}
-                                        />
-                                        {transaction.payment_method?.card && (
-                                            <>
-                                                <CardBrandBox>
-                                                    {getCardBrandLogo(
-                                                        transaction
-                                                            .payment_method.card
-                                                            .brand
-                                                    )}
-                                                </CardBrandBox>
+                                                }}
+                                            >
+                                                {transaction.status}
+                                            </Typography>
+                                        </Box>
+                                    </TableCell>
+                                    <TableCell>
+                                        {transaction.payment_method?.card ? (
+                                            <CardBrandBox>
                                                 <Typography
-                                                    variant="body2"
-                                                    color="text.secondary"
+                                                    variant="caption"
+                                                    fontWeight="bold"
                                                 >
-                                                    ...
+                                                    {transaction.payment_method.card.brand.toUpperCase()}
+                                                </Typography>
+                                                <Typography variant="caption">
+                                                    ....
                                                     {
                                                         transaction
                                                             .payment_method.card
                                                             .last4
                                                     }
                                                 </Typography>
-                                            </>
+                                            </CardBrandBox>
+                                        ) : (
+                                            <Typography
+                                                variant="body2"
+                                                color="text.secondary"
+                                            >
+                                                -
+                                            </Typography>
                                         )}
-                                    </PaymentMethodBox>
-                                </TableCell>
-                                <TableCell>
-                                    <Typography variant="body2">
-                                        {typeof transaction.amount_received ===
-                                        'number'
-                                            ? stripeService.formatAmount(
-                                                  transaction.amount_received,
-                                                  transaction.currency
-                                              )
-                                            : '—'}
-                                    </Typography>
-                                </TableCell>
-                                <TableCell>
-                                    <Typography variant="body2">
-                                        {typeof transaction.amount_capturable ===
-                                        'number'
-                                            ? stripeService.formatAmount(
-                                                  transaction.amount_capturable,
-                                                  transaction.currency
-                                              )
-                                            : '—'}
-                                    </Typography>
-                                </TableCell>
-                                <TableCell>
-                                    <Typography variant="body2">
-                                        {transaction.capture_method || '—'}
-                                    </Typography>
-                                </TableCell>
-                                <TableCell>
-                                    <Typography variant="body2">
-                                        {transaction.confirmation_method || '—'}
-                                    </Typography>
-                                </TableCell>
-                                <TableCell>
-                                    <Typography variant="body2">
-                                        {transaction.payment_method_types?.join(
-                                            ', '
-                                        ) || '—'}
-                                    </Typography>
-                                </TableCell>
-                                <TableCell>
-                                    <Typography variant="body2">
-                                        {transaction.description || '—'}
-                                    </Typography>
-                                </TableCell>
-                                <TableCell>
-                                    <Typography variant="body2">
-                                        {transaction.customer?.email || '—'}
-                                    </Typography>
-                                </TableCell>
-                                <TableCell>
-                                    <Typography
-                                        variant="body2"
-                                        color="text.secondary"
-                                    >
-                                        {stripeService.formatDate(
-                                            transaction.created
-                                        )}
-                                    </Typography>
-                                </TableCell>
-                                <TableCell>
-                                    <Typography
-                                        variant="body2"
-                                        color="text.secondary"
-                                    >
-                                        Example-merchant...
-                                    </Typography>
-                                </TableCell>
-                            </TableRow>
-                        ))}
-                    </TableBody>
-                </StyledTable>
-            </TableContainer>
+                                    </TableCell>
+                                    <TableCell>
+                                        <Typography variant="body2">
+                                            {transaction.amount_received
+                                                ? stripeService.formatAmount(
+                                                      transaction.amount_received,
+                                                      transaction.currency
+                                                  )
+                                                : '-'}
+                                        </Typography>
+                                    </TableCell>
+                                    <TableCell>
+                                        <Typography variant="body2">
+                                            {transaction.amount_capturable
+                                                ? stripeService.formatAmount(
+                                                      transaction.amount_capturable,
+                                                      transaction.currency
+                                                  )
+                                                : '-'}
+                                        </Typography>
+                                    </TableCell>
+                                    <TableCell>
+                                        <Typography variant="body2">
+                                            {transaction.capture_method || '-'}
+                                        </Typography>
+                                    </TableCell>
+                                    <TableCell>
+                                        <Typography variant="body2">
+                                            {transaction.confirmation_method ||
+                                                '-'}
+                                        </Typography>
+                                    </TableCell>
+                                    <TableCell>
+                                        <Typography variant="body2">
+                                            {transaction.payment_method_types?.join(
+                                                ', '
+                                            ) || '-'}
+                                        </Typography>
+                                    </TableCell>
+                                    <TableCell>
+                                        <Typography variant="body2">
+                                            {transaction.description || '-'}
+                                        </Typography>
+                                    </TableCell>
+                                    <TableCell>
+                                        <Typography variant="body2">
+                                            {transaction.customer?.email || '-'}
+                                        </Typography>
+                                    </TableCell>
+                                    <TableCell>
+                                        <Typography
+                                            variant="body2"
+                                            color="text.secondary"
+                                        >
+                                            {transaction.stripe_account ===
+                                            'platform'
+                                                ? 'Platform'
+                                                : transaction.account_email ||
+                                                  transaction.stripe_account ||
+                                                  '-'}
+                                        </Typography>
+                                    </TableCell>
+                                    <TableCell>
+                                        <Typography variant="body2">
+                                            {stripeService.formatDate(
+                                                transaction.created
+                                            )}
+                                        </Typography>
+                                    </TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </StyledTable>
+                </TableContainer>
+
+                {transactions.length === 0 && !loading && (
+                    <Box textAlign="center" py={4}>
+                        <Typography variant="body1" color="text.secondary">
+                            No transactions found
+                        </Typography>
+                    </Box>
+                )}
+            </Box>
         </StyledContainer>
     );
 };

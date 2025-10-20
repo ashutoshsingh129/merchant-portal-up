@@ -27,6 +27,11 @@ export interface StripeTransaction {
     capture_method?: string;
     confirmation_method?: string;
     payment_method_types?: string[];
+    // Connect account information
+    stripe_account?: string;
+    account_email?: string;
+    // Charge reference (for charges that were converted to transactions)
+    charge_id?: string;
 }
 
 export interface StripeTransactionListResponse {
@@ -46,7 +51,7 @@ export class StripeService {
 
     constructor() {
         this.baseUrl =
-            process.env.REACT_APP_API_BASE_URL || 'http://localhost:3001/api';
+            process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000/api';
     }
 
     // Get transactions with pagination and filters
@@ -59,7 +64,7 @@ export class StripeService {
     }): Promise<ApiResponse<StripeTransactionListResponse>> {
         try {
             const stripeParams: any = {
-                limit: params?.limit || 10,
+                limit: params?.limit || 200,
             };
 
             if (params?.starting_after)
@@ -147,6 +152,8 @@ export class StripeService {
         ending_before?: string;
         status?: string;
         customer?: string;
+        created_gte?: number;
+        created_lte?: number;
     }): Promise<
         ApiResponse<{
             transactions: StripeTransactionListResponse;
@@ -163,7 +170,7 @@ export class StripeService {
     > {
         try {
             const stripeParams: any = {
-                limit: params?.limit || 100, // Use higher limit to get more data for summary
+                limit: params?.limit || 200, // Use higher limit to get more data for summary
             };
 
             if (params?.starting_after)
@@ -171,7 +178,12 @@ export class StripeService {
             if (params?.ending_before)
                 stripeParams.ending_before = params.ending_before;
             if (params?.status) stripeParams.status = params.status;
-            if (params?.customer) stripeParams.customer = params.customer;
+            // Remove customer filtering to show all transactions
+            // if (params?.customer && params.customer !== 'all') stripeParams.customer = params.customer;
+            if (params?.created_gte)
+                stripeParams.created_gte = params.created_gte;
+            if (params?.created_lte)
+                stripeParams.created_lte = params.created_lte;
 
             const query = new URLSearchParams({
                 limit: String(stripeParams.limit),
@@ -262,6 +274,74 @@ export class StripeService {
                 return '#ef4444';
             default:
                 return '#6b7280';
+        }
+    }
+
+    // Get ALL transactions from ALL accounts (platform + Connect)
+    async getAllTransactionsWithSummary(params?: { limit?: number }): Promise<
+        ApiResponse<{
+            transactions: StripeTransactionListResponse;
+            summary: {
+                total: number;
+                succeeded: number;
+                pending: number;
+                failed: number;
+                refunded: number;
+                disputed: number;
+                uncaptured: number;
+            };
+        }>
+    > {
+        try {
+            const stripeParams: any = {
+                limit: params?.limit || 200,
+            };
+
+            const query = new URLSearchParams({
+                limit: String(stripeParams.limit),
+            });
+
+            const res = await fetch(
+                `${this.baseUrl}/stripe/all-transactions?${query.toString()}`
+            );
+            if (!res.ok)
+                throw new Error(
+                    'Failed to fetch all transactions with summary'
+                );
+            const body = await res.json();
+
+            return {
+                data: {
+                    transactions: body.transactions,
+                    summary: body.summary,
+                },
+                message: 'All transactions and summary fetched successfully',
+                success: true,
+            };
+        } catch (error) {
+            console.error(
+                'Error fetching all transactions with summary:',
+                error
+            );
+            return {
+                data: {
+                    transactions: { data: [], has_more: false },
+                    summary: {
+                        total: 0,
+                        succeeded: 0,
+                        pending: 0,
+                        failed: 0,
+                        refunded: 0,
+                        disputed: 0,
+                        uncaptured: 0,
+                    },
+                },
+                message:
+                    error instanceof Error
+                        ? error.message
+                        : 'Failed to fetch all transactions with summary',
+                success: false,
+            };
         }
     }
 }

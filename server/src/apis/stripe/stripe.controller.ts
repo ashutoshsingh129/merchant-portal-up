@@ -39,6 +39,20 @@ export class StripeController {
       customer,
     });
   }
+
+  @Get('all-transactions')
+  getAllTransactions(
+    @Query('limit') limit?: string,
+  ) {
+    return this.stripeService.getAllTransactionsWithSummary({
+      limit: limit ? parseInt(limit) : undefined,
+    });
+  }
+
+  @Get('accounts')
+  getAccounts() {
+    return this.stripeService.getConnectedAccounts();
+  }
 }
 
 
