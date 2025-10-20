@@ -2,11 +2,9 @@
   "name": "stripe-simply-pay-root",
   "private": true,
   "scripts": {
-    "dev": "concurrently \"npm --prefix \\\"merchant-portal\\\" run start:dev\" \"npm --prefix \\\"server\\\" run start:dev\""
+    "dev": "concurrently \"npm --prefix \\\"client\\\" run start:dev\" \"npm --prefix \\\"server\\\" run start:dev\""
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
   }
 }
-
-
