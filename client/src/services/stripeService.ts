@@ -34,8 +34,36 @@ export interface StripeTransaction {
     charge_id?: string;
 }
 
+// Stripe Payout Types
+export interface StripePayout {
+    id: string;
+    amount: number;
+    currency: string;
+    status: 'paid' | 'pending' | 'in_transit' | 'canceled' | 'failed';
+    arrival_date: number;
+    created: number;
+    description?: string;
+    destination: string;
+    failure_code?: string;
+    failure_message?: string;
+    method: 'standard' | 'instant';
+    source_type: 'card' | 'bank_account';
+    statement_descriptor?: string;
+    type: 'bank_account' | 'card';
+    metadata?: Record<string, string>;
+    // Connect account information
+    stripe_account?: string;
+    account_email?: string;
+}
+
 export interface StripeTransactionListResponse {
     data: StripeTransaction[];
+    has_more: boolean;
+    total_count?: number;
+}
+
+export interface StripePayoutListResponse {
+    data: StripePayout[];
     has_more: boolean;
     total_count?: number;
 }
@@ -340,6 +368,150 @@ export class StripeService {
                     error instanceof Error
                         ? error.message
                         : 'Failed to fetch all transactions with summary',
+                success: false,
+            };
+        }
+    }
+
+    // Get payouts with pagination and filters
+    async getPayouts(params?: {
+        limit?: number;
+        starting_after?: string;
+        ending_before?: string;
+    }): Promise<ApiResponse<StripePayoutListResponse>> {
+        try {
+            const stripeParams: any = {
+                limit: params?.limit || 200,
+            };
+
+            if (params?.starting_after)
+                stripeParams.starting_after = params.starting_after;
+            if (params?.ending_before)
+                stripeParams.ending_before = params.ending_before;
+
+            const query = new URLSearchParams({
+                limit: String(stripeParams.limit),
+                ...(stripeParams.starting_after && {
+                    starting_after: stripeParams.starting_after,
+                }),
+                ...(stripeParams.ending_before && {
+                    ending_before: stripeParams.ending_before,
+                }),
+            });
+
+            const res = await fetch(
+                `${this.baseUrl}/stripe/payouts?${query.toString()}`
+            );
+            if (!res.ok) throw new Error('Failed to fetch payouts');
+            const body = await res.json();
+
+            return {
+                data: {
+                    data: body.data,
+                    has_more: body.has_more,
+                    total_count: body.total_count,
+                },
+                message: 'Payouts fetched successfully',
+                success: true,
+            };
+        } catch (error) {
+            console.error('Error fetching payouts:', error);
+            return {
+                data: { data: [], has_more: false },
+                message:
+                    error instanceof Error
+                        ? error.message
+                        : 'Failed to fetch payouts',
+                success: false,
+            };
+        }
+    }
+
+    // Get a single payout by ID
+    async getPayout(
+        payoutId: string
+    ): Promise<ApiResponse<StripePayout | null>> {
+        try {
+            const res = await fetch(
+                `${this.baseUrl}/stripe/payouts/${payoutId}`
+            );
+            if (!res.ok) throw new Error('Failed to fetch payout');
+            const payout = await res.json();
+
+            return {
+                data: payout,
+                message: 'Payout fetched successfully',
+                success: true,
+            };
+        } catch (error) {
+            console.error('Error fetching payout:', error);
+            return {
+                data: null,
+                message:
+                    error instanceof Error
+                        ? error.message
+                        : 'Failed to fetch payout',
+                success: false,
+            };
+        }
+    }
+
+    // Get ALL payouts from ALL accounts (platform + Connect)
+    async getAllPayoutsWithSummary(params?: { limit?: number }): Promise<
+        ApiResponse<{
+            payouts: StripePayoutListResponse;
+            summary: {
+                total: number;
+                paid: number;
+                pending: number;
+                in_transit: number;
+                canceled: number;
+                failed: number;
+            };
+        }>
+    > {
+        try {
+            const stripeParams: any = {
+                limit: params?.limit || 200,
+            };
+
+            const query = new URLSearchParams({
+                limit: String(stripeParams.limit),
+            });
+
+            const res = await fetch(
+                `${this.baseUrl}/stripe/all-payouts?${query.toString()}`
+            );
+            if (!res.ok)
+                throw new Error('Failed to fetch all payouts with summary');
+            const body = await res.json();
+
+            return {
+                data: {
+                    payouts: body.payouts,
+                    summary: body.summary,
+                },
+                message: 'All payouts and summary fetched successfully',
+                success: true,
+            };
+        } catch (error) {
+            console.error('Error fetching all payouts with summary:', error);
+            return {
+                data: {
+                    payouts: { data: [], has_more: false },
+                    summary: {
+                        total: 0,
+                        paid: 0,
+                        pending: 0,
+                        in_transit: 0,
+                        canceled: 0,
+                        failed: 0,
+                    },
+                },
+                message:
+                    error instanceof Error
+                        ? error.message
+                        : 'Failed to fetch all payouts with summary',
                 success: false,
             };
         }

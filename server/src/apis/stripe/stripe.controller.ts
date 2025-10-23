@@ -53,6 +53,33 @@ export class StripeController {
   getAccounts() {
     return this.stripeService.getConnectedAccounts();
   }
+
+  @Get('payouts')
+  listPayouts(
+    @Query('limit') limit?: string,
+    @Query('starting_after') starting_after?: string,
+    @Query('ending_before') ending_before?: string,
+  ) {
+    return this.stripeService.listPayouts({
+      limit: limit ? parseInt(limit) : undefined,
+      starting_after,
+      ending_before,
+    });
+  }
+
+  @Get('payouts/:id')
+  getPayout(@Param('id') id: string) {
+    return this.stripeService.getPayout(id);
+  }
+
+  @Get('all-payouts')
+  getAllPayouts(
+    @Query('limit') limit?: string,
+  ) {
+    return this.stripeService.getAllPayoutsWithSummary({
+      limit: limit ? parseInt(limit) : undefined,
+    });
+  }
 }
 
 

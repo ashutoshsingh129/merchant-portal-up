@@ -568,6 +568,258 @@ export class StripeService {
     };
   }
 
+  async listPayouts(params: {
+    limit?: number;
+    starting_after?: string;
+    ending_before?: string;
+  }) {
+    this.ensureStripe();
+    const payouts = await this.stripe!.payouts.list({
+      limit: params?.limit ?? 200,
+      starting_after: params?.starting_after,
+      ending_before: params?.ending_before,
+    });
+
+    const formattedPayouts = payouts.data.map((payout) => ({
+      id: payout.id,
+      amount: payout.amount,
+      currency: payout.currency,
+      status: payout.status,
+      arrival_date: payout.arrival_date,
+      created: payout.created,
+      description: payout.description,
+      destination: payout.destination,
+      failure_code: payout.failure_code,
+      failure_message: payout.failure_message,
+      method: payout.method,
+      source_type: payout.source_type,
+      statement_descriptor: payout.statement_descriptor,
+      type: payout.type,
+      metadata: payout.metadata as Record<string, string>,
+      stripe_account: 'platform',
+    }));
+
+    return {
+      data: formattedPayouts,
+      has_more: payouts.has_more,
+      total_count: formattedPayouts.length,
+    };
+  }
+
+  async getPayout(id: string) {
+    this.ensureStripe();
+    const payout = await this.stripe!.payouts.retrieve(id);
+    return {
+      id: payout.id,
+      amount: payout.amount,
+      currency: payout.currency,
+      status: payout.status,
+      arrival_date: payout.arrival_date,
+      created: payout.created,
+      description: payout.description,
+      destination: payout.destination,
+      failure_code: payout.failure_code,
+      failure_message: payout.failure_message,
+      method: payout.method,
+      source_type: payout.source_type,
+      statement_descriptor: payout.statement_descriptor,
+      type: payout.type,
+      metadata: payout.metadata as Record<string, string>,
+    };
+  }
+
+  async getAllPayoutsWithSummary(params: {
+    limit?: number;
+  }) {
+    this.ensureStripe();
+    let allPayouts: any[] = [];
+    let allSummary = {
+      total: 0,
+      paid: 0,
+      pending: 0,
+      in_transit: 0,
+      canceled: 0,
+      failed: 0,
+    };
+
+    console.log('Fetching payouts from platform account...');
+    
+    // Get Payouts from the platform account
+    const platformPayouts = await this.stripe!.payouts.list({
+      limit: 100, // Stripe's maximum limit
+    });
+
+    console.log(`Platform Payouts: ${platformPayouts.data.length}`);
+
+    // Fetch additional pages for Platform Payouts
+    let allPlatformPayouts = [...platformPayouts.data];
+    let hasMore = platformPayouts.has_more;
+    let startingAfter = platformPayouts.data[platformPayouts.data.length - 1]?.id;
+
+    while (hasMore && allPlatformPayouts.length < 1000) {
+      try {
+        const nextPage = await this.stripe!.payouts.list({
+          limit: 100,
+          starting_after: startingAfter,
+        });
+        
+        allPlatformPayouts = [...allPlatformPayouts, ...nextPage.data];
+        hasMore = nextPage.has_more;
+        startingAfter = nextPage.data[nextPage.data.length - 1]?.id;
+        
+        console.log(`Fetched additional ${nextPage.data.length} payouts from platform account. Total: ${allPlatformPayouts.length}`);
+      } catch (error) {
+        console.error('Error fetching additional platform payouts:', error);
+        break;
+      }
+    }
+
+    // Convert Platform Payouts to our payout format
+    const platformPayoutTransactions = allPlatformPayouts.map((payout) => ({
+      id: payout.id,
+      amount: payout.amount,
+      currency: payout.currency,
+      status: payout.status,
+      arrival_date: payout.arrival_date,
+      created: payout.created,
+      description: payout.description,
+      destination: payout.destination,
+      failure_code: payout.failure_code,
+      failure_message: payout.failure_message,
+      method: payout.method,
+      source_type: payout.source_type,
+      statement_descriptor: payout.statement_descriptor,
+      type: payout.type,
+      metadata: payout.metadata as Record<string, string>,
+      stripe_account: 'platform',
+    }));
+
+    allPayouts = [...platformPayoutTransactions];
+
+    // Now get all Connect accounts and their payouts
+    try {
+      const accounts = await this.stripe!.accounts.list({ limit: 100 });
+      console.log(`Found ${accounts.data.length} connected accounts`);
+
+      for (const account of accounts.data) {
+        try {
+          console.log(`Fetching payouts for Connect account: ${account.id}`);
+          
+          // Fetch Payouts from Connect account
+          const connectPayouts = await this.stripe!.payouts.list({
+            limit: 100, // Stripe's maximum limit
+          }, {
+            stripeAccount: account.id
+          });
+
+          // Fetch additional pages for Connect account
+          let allConnectPayouts = [...connectPayouts.data];
+          let connectHasMore = connectPayouts.has_more;
+          let connectStartingAfter = connectPayouts.data[connectPayouts.data.length - 1]?.id;
+
+          while (connectHasMore && allConnectPayouts.length < 1000) { // Safety limit
+            try {
+              const nextConnectPage = await this.stripe!.payouts.list({
+                limit: 100,
+                starting_after: connectStartingAfter,
+              }, {
+                stripeAccount: account.id
+              });
+              
+              allConnectPayouts = [...allConnectPayouts, ...nextConnectPage.data];
+              connectHasMore = nextConnectPage.has_more;
+              connectStartingAfter = nextConnectPage.data[nextConnectPage.data.length - 1]?.id;
+              
+              console.log(`Fetched additional ${nextConnectPage.data.length} payouts from Connect account ${account.id}. Total: ${allConnectPayouts.length}`);
+            } catch (error) {
+              console.error(`Error fetching additional Connect payouts for ${account.id}:`, error);
+              break;
+            }
+          }
+
+          console.log(`Connect account ${account.id}: ${allConnectPayouts.length} payouts (including pagination)`);
+
+          // Convert Connect Payouts
+          const connectPayoutTransactions = allConnectPayouts.map((payout) => ({
+            id: payout.id,
+            amount: payout.amount,
+            currency: payout.currency,
+            status: payout.status,
+            arrival_date: payout.arrival_date,
+            created: payout.created,
+            description: payout.description,
+            destination: payout.destination,
+            failure_code: payout.failure_code,
+            failure_message: payout.failure_message,
+            method: payout.method,
+            source_type: payout.source_type,
+            statement_descriptor: payout.statement_descriptor,
+            type: payout.type,
+            metadata: payout.metadata as Record<string, string>,
+            stripe_account: account.id,
+            account_email: account.email,
+          }));
+
+          allPayouts = [...allPayouts, ...connectPayoutTransactions];
+        } catch (accountError) {
+          console.error(`Error fetching payouts for account ${account.id}:`, accountError.message);
+          // Continue with other accounts even if one fails
+        }
+      }
+    } catch (connectError) {
+      console.log('No Connect accounts found or error fetching Connect accounts:', connectError.message);
+      // Continue with just platform payouts
+    }
+
+    // Sort by creation date
+    allPayouts.sort((a, b) => b.created - a.created);
+
+    console.log(`Total payouts from all accounts: ${allPayouts.length}`);
+
+    // Calculate summary
+    allSummary = allPayouts.reduce((acc, payout) => {
+      acc.total++;
+      switch (payout.status) {
+        case 'paid':
+          acc.paid++;
+          break;
+        case 'pending':
+          acc.pending++;
+          break;
+        case 'in_transit':
+          acc.in_transit++;
+          break;
+        case 'canceled':
+          acc.canceled++;
+          break;
+        case 'failed':
+          acc.failed++;
+          break;
+        default:
+          acc.pending++;
+      }
+      return acc;
+    }, {
+      total: 0,
+      paid: 0,
+      pending: 0,
+      in_transit: 0,
+      canceled: 0,
+      failed: 0,
+    });
+
+    console.log('Payout Summary:', allSummary);
+
+    return {
+      payouts: {
+        data: allPayouts,
+        has_more: false, // We're fetching all available
+        total_count: allPayouts.length,
+      },
+      summary: allSummary
+    };
+  }
+
   async getConnectedAccounts() {
     this.ensureStripe();
     const accounts = await this.stripe!.accounts.list({ limit: 100 });
