@@ -92,10 +92,10 @@ const StyledTable = styled(Table)(({ theme }) => ({
     '& .MuiTableCell-root:nth-of-type(2)': { minWidth: '120px' }, // Status
     '& .MuiTableCell-root:nth-of-type(3)': { minWidth: '150px' }, // Payment Method
     '& .MuiTableCell-root:nth-of-type(4)': { minWidth: '120px' }, // Amount Received
-    '& .MuiTableCell-root:nth-of-type(5)': { minWidth: '120px' }, // Capturable
-    '& .MuiTableCell-root:nth-of-type(6)': { minWidth: '140px' }, // Capture Method
-    '& .MuiTableCell-root:nth-of-type(7)': { minWidth: '140px' }, // Confirmation
-    '& .MuiTableCell-root:nth-of-type(8)': { minWidth: '120px' }, // PM Types
+    '& .MuiTableCell-root:nth-of-type(5)': { minWidth: '120px' }, // Refunded Amount
+    '& .MuiTableCell-root:nth-of-type(6)': { minWidth: '120px' }, // Decline Reason
+    '& .MuiTableCell-root:nth-of-type(7)': { minWidth: '150px' }, // Settlement Merchant
+    '& .MuiTableCell-root:nth-of-type(8)': { minWidth: '150px' }, // Terminal Location
     '& .MuiTableCell-root:nth-of-type(9)': { minWidth: '150px' }, // Description
     '& .MuiTableCell-root:nth-of-type(10)': { minWidth: '150px' }, // Customer
     '& .MuiTableCell-root:nth-of-type(11)': { minWidth: '150px' }, // Account
@@ -328,10 +328,10 @@ const Payments: React.FC = () => {
                                 <TableCell>Status</TableCell>
                                 <TableCell>Payment Method</TableCell>
                                 <TableCell>Amount Received</TableCell>
-                                <TableCell>Capturable</TableCell>
-                                <TableCell>Capture Method</TableCell>
-                                <TableCell>Confirmation</TableCell>
-                                <TableCell>Payment Types</TableCell>
+                                <TableCell>Refunded Amount</TableCell>
+                                <TableCell>Decline Reason</TableCell>
+                                <TableCell>Settlement Merchant</TableCell>
+                                <TableCell>Terminal Location</TableCell>
                                 <TableCell>Description</TableCell>
                                 <TableCell>Customer</TableCell>
                                 <TableCell>Account</TableCell>
@@ -409,31 +409,48 @@ const Payments: React.FC = () => {
                                         </Typography>
                                     </TableCell>
                                     <TableCell>
-                                        <Typography variant="body2">
-                                            {transaction.amount_capturable
+                                        <Typography
+                                            variant="body2"
+                                            sx={{
+                                                color:
+                                                    transaction.refunded_amount &&
+                                                    transaction.refunded_amount >
+                                                        0
+                                                        ? '#f59e0b'
+                                                        : 'inherit',
+                                            }}
+                                        >
+                                            {transaction.refunded_amount &&
+                                            transaction.refunded_amount > 0
                                                 ? stripeService.formatAmount(
-                                                      transaction.amount_capturable,
+                                                      transaction.refunded_amount,
                                                       transaction.currency
                                                   )
                                                 : '-'}
                                         </Typography>
                                     </TableCell>
                                     <TableCell>
-                                        <Typography variant="body2">
-                                            {transaction.capture_method || '-'}
+                                        <Typography
+                                            variant="body2"
+                                            sx={{
+                                                color: transaction.decline_reason
+                                                    ? '#ef4444'
+                                                    : 'inherit',
+                                            }}
+                                        >
+                                            {transaction.decline_reason || '-'}
                                         </Typography>
                                     </TableCell>
                                     <TableCell>
                                         <Typography variant="body2">
-                                            {transaction.confirmation_method ||
+                                            {transaction.settlement_merchant ||
                                                 '-'}
                                         </Typography>
                                     </TableCell>
                                     <TableCell>
                                         <Typography variant="body2">
-                                            {transaction.payment_method_types?.join(
-                                                ', '
-                                            ) || '-'}
+                                            {transaction.terminal_location ||
+                                                '-'}
                                         </Typography>
                                     </TableCell>
                                     <TableCell>

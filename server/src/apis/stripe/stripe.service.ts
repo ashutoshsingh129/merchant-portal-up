@@ -31,43 +31,97 @@ export class StripeService {
       ending_before: params?.ending_before,
       // Remove customer filtering to show all transactions from all accounts
       // customer: params?.customer,
-      expand: ['data.payment_method'],
+      expand: [
+        'data.payment_method',
+        'data.latest_charge',
+        'data.latest_charge.outcome',
+        'data.latest_charge.refunds',
+        'data.latest_charge.balance_transaction',
+        'data.latest_charge.transfer_data',
+        'data.customer'
+      ],
     });
 
-    const transactions = payments.data.map((payment) => ({
-      id: payment.id,
-      amount: payment.amount,
-      currency: payment.currency,
-      status: payment.status,
-      description: payment.description ?? undefined,
-      customer: payment.customer
-        ? {
-            id: String(payment.customer),
-            email: payment.receipt_email ?? undefined,
-          }
-        : undefined,
-      // payment.payment_method can be string or object depending on expansions; keep undefined-safe
-      payment_method: (payment as any).payment_method
-        ? {
-            type: (payment as any).payment_method.type,
-            card: (payment as any).payment_method.card
-              ? {
-                  brand: (payment as any).payment_method.card.brand,
-                  last4: (payment as any).payment_method.card.last4,
-                }
-              : undefined,
-          }
-        : undefined,
-      created: payment.created,
-      metadata: payment.metadata as Record<string, string>,
-      fee: (payment as any).application_fee_amount,
-      net: payment.amount - ((payment as any).application_fee_amount || 0),
-      amount_received: payment.amount_received,
-      amount_capturable: payment.amount_capturable,
-      capture_method: payment.capture_method,
-      confirmation_method: payment.confirmation_method,
-      payment_method_types: payment.payment_method_types,
-    }));
+    const transactions = payments.data.map((payment) => {
+      const latestCharge = (payment as any).latest_charge;
+      const outcome = latestCharge?.outcome;
+      const refunds = latestCharge?.refunds?.data || [];
+      const balanceTransaction = latestCharge?.balance_transaction;
+      const transferData = latestCharge?.transfer_data;
+      
+      return {
+        id: payment.id,
+        amount: payment.amount,
+        currency: payment.currency,
+        status: payment.status,
+        description: payment.description ?? undefined,
+        customer: payment.customer
+          ? {
+              id: String(payment.customer),
+              email: payment.receipt_email ?? undefined,
+            }
+          : undefined,
+        // Enhanced payment method with more details
+        payment_method: (payment as any).payment_method
+          ? {
+              type: (payment as any).payment_method.type,
+              card: (payment as any).payment_method.card
+                ? {
+                    brand: (payment as any).payment_method.card.brand,
+                    last4: (payment as any).payment_method.card.last4,
+                    exp_month: (payment as any).payment_method.card.exp_month,
+                    exp_year: (payment as any).payment_method.card.exp_year,
+                    funding: (payment as any).payment_method.card.funding,
+                  }
+                : undefined,
+            }
+          : undefined,
+        created: payment.created,
+        metadata: payment.metadata as Record<string, string>,
+        fee: (payment as any).application_fee_amount,
+        net: payment.amount - ((payment as any).application_fee_amount || 0),
+        amount_received: payment.amount_received,
+        amount_capturable: payment.amount_capturable,
+        capture_method: payment.capture_method,
+        confirmation_method: payment.confirmation_method,
+        payment_method_types: payment.payment_method_types,
+        
+        // NEW FIELDS based on ChatGPT recommendations
+        // Decline reason and failure details
+        decline_reason: outcome?.reason || outcome?.failure_code || undefined,
+        failure_message: outcome?.failure_message || undefined,
+        risk_level: outcome?.risk_level || undefined,
+        
+        // Refund information
+        refunded_amount: refunds.reduce((sum: number, refund: any) => sum + refund.amount, 0),
+        refunded_date: refunds.length > 0 ? refunds[0].created : undefined,
+        refund_count: refunds.length,
+        refunds: refunds.map((refund: any) => ({
+          id: refund.id,
+          amount: refund.amount,
+          created: refund.created,
+          reason: refund.reason,
+          status: refund.status,
+        })),
+        
+        // Settlement and transfer information
+        settlement_merchant: transferData?.destination || balanceTransaction?.destination || undefined,
+        transferred_to: transferData?.destination || undefined,
+        transfer_group: latestCharge?.transfer_group || undefined,
+        
+        // Terminal information (if available in metadata)
+        terminal_location: payment.metadata?.terminal_location || payment.metadata?.location_id || undefined,
+        terminal_reader: payment.metadata?.terminal_reader || payment.metadata?.reader_id || undefined,
+        
+        // Balance transaction details
+        balance_transaction_id: balanceTransaction?.id || undefined,
+        net_amount: balanceTransaction?.net || payment.amount - ((payment as any).application_fee_amount || 0),
+        fee_details: balanceTransaction?.fee_details || undefined,
+        
+        // Charge reference
+        charge_id: latestCharge?.id || undefined,
+      };
+    });
 
     return {
       data: transactions,
@@ -79,8 +133,23 @@ export class StripeService {
   async getTransaction(id: string) {
     this.ensureStripe();
     const payment = await this.stripe!.paymentIntents.retrieve(id, {
-      expand: ['payment_method'],
+      expand: [
+        'payment_method',
+        'latest_charge',
+        'latest_charge.outcome',
+        'latest_charge.refunds',
+        'latest_charge.balance_transaction',
+        'latest_charge.transfer_data',
+        'customer'
+      ],
     });
+    
+    const latestCharge = (payment as any).latest_charge;
+    const outcome = latestCharge?.outcome;
+    const refunds = latestCharge?.refunds?.data || [];
+    const balanceTransaction = latestCharge?.balance_transaction;
+    const transferData = latestCharge?.transfer_data;
+    
     return {
       id: payment.id,
       amount: payment.amount,
@@ -93,6 +162,7 @@ export class StripeService {
             email: payment.receipt_email ?? undefined,
           }
         : undefined,
+      // Enhanced payment method with more details
       payment_method: (payment as any).payment_method
         ? {
             type: (payment as any).payment_method.type,
@@ -100,6 +170,9 @@ export class StripeService {
               ? {
                   brand: (payment as any).payment_method.card.brand,
                   last4: (payment as any).payment_method.card.last4,
+                  exp_month: (payment as any).payment_method.card.exp_month,
+                  exp_year: (payment as any).payment_method.card.exp_year,
+                  funding: (payment as any).payment_method.card.funding,
                 }
               : undefined,
           }
@@ -113,6 +186,41 @@ export class StripeService {
       capture_method: payment.capture_method,
       confirmation_method: payment.confirmation_method,
       payment_method_types: payment.payment_method_types,
+      
+      // NEW FIELDS based on ChatGPT recommendations
+      // Decline reason and failure details
+      decline_reason: outcome?.reason || outcome?.failure_code || undefined,
+      failure_message: outcome?.failure_message || undefined,
+      risk_level: outcome?.risk_level || undefined,
+      
+      // Refund information
+      refunded_amount: refunds.reduce((sum: number, refund: any) => sum + refund.amount, 0),
+      refunded_date: refunds.length > 0 ? refunds[0].created : undefined,
+      refund_count: refunds.length,
+      refunds: refunds.map((refund: any) => ({
+        id: refund.id,
+        amount: refund.amount,
+        created: refund.created,
+        reason: refund.reason,
+        status: refund.status,
+      })),
+      
+      // Settlement and transfer information
+      settlement_merchant: transferData?.destination || balanceTransaction?.destination || undefined,
+      transferred_to: transferData?.destination || undefined,
+      transfer_group: latestCharge?.transfer_group || undefined,
+      
+      // Terminal information (if available in metadata)
+      terminal_location: payment.metadata?.terminal_location || payment.metadata?.location_id || undefined,
+      terminal_reader: payment.metadata?.terminal_reader || payment.metadata?.reader_id || undefined,
+      
+      // Balance transaction details
+      balance_transaction_id: balanceTransaction?.id || undefined,
+      net_amount: balanceTransaction?.net || payment.amount - ((payment as any).application_fee_amount || 0),
+      fee_details: balanceTransaction?.fee_details || undefined,
+      
+      // Charge reference
+      charge_id: latestCharge?.id || undefined,
     };
   }
 
@@ -174,10 +282,18 @@ export class StripeService {
 
     console.log('Fetching transactions from platform account...');
     
-    // First, get Payment Intents from the platform account
+    // First, get Payment Intents from the platform account with enhanced expansions
     const platformPayments = await this.stripe!.paymentIntents.list({
       limit: 100, // Stripe's maximum limit
-      expand: ['data.payment_method', 'data.customer']
+      expand: [
+        'data.payment_method',
+        'data.latest_charge',
+        'data.latest_charge.outcome',
+        'data.latest_charge.refunds',
+        'data.latest_charge.balance_transaction',
+        'data.latest_charge.transfer_data',
+        'data.customer'
+      ]
     });
 
     // Also get Charges from the platform account (these are what show in Stripe dashboard)
@@ -200,7 +316,15 @@ export class StripeService {
         const nextPage = await this.stripe!.paymentIntents.list({
           limit: 100,
           starting_after: startingAfter,
-          expand: ['data.payment_method', 'data.customer']
+          expand: [
+            'data.payment_method',
+            'data.latest_charge',
+            'data.latest_charge.outcome',
+            'data.latest_charge.refunds',
+            'data.latest_charge.balance_transaction',
+            'data.latest_charge.transfer_data',
+            'data.customer'
+          ]
         });
         
         allPlatformPayments = [...allPlatformPayments, ...nextPage.data];
@@ -240,41 +364,88 @@ export class StripeService {
 
     console.log(`Platform account: ${allPlatformPayments.length} payment intents + ${allPlatformCharges.length} charges (including pagination)`);
     
-    // Convert Payment Intents to our transaction format
-    const platformPaymentTransactions = allPlatformPayments.map((payment) => ({
-      id: payment.id,
-      amount: payment.amount,
-      currency: payment.currency,
-      status: payment.status,
-      description: payment.description ?? undefined,
-      customer: payment.customer
-        ? {
-            id: String(payment.customer),
-            email: payment.receipt_email ?? undefined,
-          }
-        : undefined,
-      payment_method: (payment as any).payment_method
-        ? {
-            type: (payment as any).payment_method.type,
-            card: (payment as any).payment_method.card
-              ? {
-                  brand: (payment as any).payment_method.card.brand,
-                  last4: (payment as any).payment_method.card.last4,
-                }
-              : undefined,
-          }
-        : undefined,
-      created: payment.created,
-      metadata: payment.metadata as Record<string, string>,
-      fee: (payment as any).application_fee_amount,
-      net: payment.amount - ((payment as any).application_fee_amount || 0),
-      amount_received: payment.amount_received,
-      amount_capturable: payment.amount_capturable,
-      capture_method: payment.capture_method,
-      confirmation_method: payment.confirmation_method,
-      payment_method_types: payment.payment_method_types,
-      stripe_account: 'platform',
-    }));
+    // Convert Payment Intents to our transaction format with enhanced fields
+    const platformPaymentTransactions = allPlatformPayments.map((payment) => {
+      const latestCharge = (payment as any).latest_charge;
+      const outcome = latestCharge?.outcome;
+      const refunds = latestCharge?.refunds?.data || [];
+      const balanceTransaction = latestCharge?.balance_transaction;
+      const transferData = latestCharge?.transfer_data;
+      
+      return {
+        id: payment.id,
+        amount: payment.amount,
+        currency: payment.currency,
+        status: payment.status,
+        description: payment.description ?? undefined,
+        customer: payment.customer
+          ? {
+              id: String(payment.customer),
+              email: payment.receipt_email ?? undefined,
+            }
+          : undefined,
+        // Enhanced payment method with more details
+        payment_method: (payment as any).payment_method
+          ? {
+              type: (payment as any).payment_method.type,
+              card: (payment as any).payment_method.card
+                ? {
+                    brand: (payment as any).payment_method.card.brand,
+                    last4: (payment as any).payment_method.card.last4,
+                    exp_month: (payment as any).payment_method.card.exp_month,
+                    exp_year: (payment as any).payment_method.card.exp_year,
+                    funding: (payment as any).payment_method.card.funding,
+                  }
+                : undefined,
+            }
+          : undefined,
+        created: payment.created,
+        metadata: payment.metadata as Record<string, string>,
+        fee: (payment as any).application_fee_amount,
+        net: payment.amount - ((payment as any).application_fee_amount || 0),
+        amount_received: payment.amount_received,
+        amount_capturable: payment.amount_capturable,
+        capture_method: payment.capture_method,
+        confirmation_method: payment.confirmation_method,
+        payment_method_types: payment.payment_method_types,
+        stripe_account: 'platform',
+        
+        // NEW FIELDS based on ChatGPT recommendations
+        // Decline reason and failure details
+        decline_reason: outcome?.reason || outcome?.failure_code || undefined,
+        failure_message: outcome?.failure_message || undefined,
+        risk_level: outcome?.risk_level || undefined,
+        
+        // Refund information
+        refunded_amount: refunds.reduce((sum: number, refund: any) => sum + refund.amount, 0),
+        refunded_date: refunds.length > 0 ? refunds[0].created : undefined,
+        refund_count: refunds.length,
+        refunds: refunds.map((refund: any) => ({
+          id: refund.id,
+          amount: refund.amount,
+          created: refund.created,
+          reason: refund.reason,
+          status: refund.status,
+        })),
+        
+        // Settlement and transfer information
+        settlement_merchant: transferData?.destination || balanceTransaction?.destination || undefined,
+        transferred_to: transferData?.destination || undefined,
+        transfer_group: latestCharge?.transfer_group || undefined,
+        
+        // Terminal information (if available in metadata)
+        terminal_location: payment.metadata?.terminal_location || payment.metadata?.location_id || undefined,
+        terminal_reader: payment.metadata?.terminal_reader || payment.metadata?.reader_id || undefined,
+        
+        // Balance transaction details
+        balance_transaction_id: balanceTransaction?.id || undefined,
+        net_amount: balanceTransaction?.net || payment.amount - ((payment as any).application_fee_amount || 0),
+        fee_details: balanceTransaction?.fee_details || undefined,
+        
+        // Charge reference
+        charge_id: latestCharge?.id || undefined,
+      };
+    });
 
     // Convert Charges to our transaction format
     const platformChargeTransactions = allPlatformCharges.map((charge) => ({
@@ -326,10 +497,18 @@ export class StripeService {
         try {
           console.log(`Fetching transactions for Connect account: ${account.id}`);
           
-          // Fetch Payment Intents from Connect account
+          // Fetch Payment Intents from Connect account with enhanced expansions
           const connectPayments = await this.stripe!.paymentIntents.list({
             limit: 100, // Stripe's maximum limit
-            expand: ['data.payment_method', 'data.customer']
+            expand: [
+              'data.payment_method',
+              'data.latest_charge',
+              'data.latest_charge.outcome',
+              'data.latest_charge.refunds',
+              'data.latest_charge.balance_transaction',
+              'data.latest_charge.transfer_data',
+              'data.customer'
+            ]
           }, {
             stripeAccount: account.id
           });
@@ -352,7 +531,15 @@ export class StripeService {
               const nextConnectPage = await this.stripe!.paymentIntents.list({
                 limit: 100,
                 starting_after: connectStartingAfter,
-                expand: ['data.payment_method', 'data.customer']
+                expand: [
+                  'data.payment_method',
+                  'data.latest_charge',
+                  'data.latest_charge.outcome',
+                  'data.latest_charge.refunds',
+                  'data.latest_charge.balance_transaction',
+                  'data.latest_charge.transfer_data',
+                  'data.customer'
+                ]
               }, {
                 stripeAccount: account.id
               });
@@ -396,42 +583,89 @@ export class StripeService {
 
           console.log(`Connect account ${account.id}: ${allConnectPayments.length} payment intents + ${allConnectCharges.length} charges (including pagination)`);
 
-          // Convert Payment Intents
-          const connectPaymentTransactions = allConnectPayments.map((payment) => ({
-            id: payment.id,
-            amount: payment.amount,
-            currency: payment.currency,
-            status: payment.status,
-            description: payment.description ?? undefined,
-            customer: payment.customer
-              ? {
-                  id: String(payment.customer),
-                  email: payment.receipt_email ?? undefined,
-                }
-              : undefined,
-            payment_method: (payment as any).payment_method
-              ? {
-                  type: (payment as any).payment_method.type,
-                  card: (payment as any).payment_method.card
-                    ? {
-                        brand: (payment as any).payment_method.card.brand,
-                        last4: (payment as any).payment_method.card.last4,
-                      }
-                    : undefined,
-                }
-              : undefined,
-            created: payment.created,
-            metadata: payment.metadata as Record<string, string>,
-            fee: (payment as any).application_fee_amount,
-            net: payment.amount - ((payment as any).application_fee_amount || 0),
-            amount_received: payment.amount_received,
-            amount_capturable: payment.amount_capturable,
-            capture_method: payment.capture_method,
-            confirmation_method: payment.confirmation_method,
-            payment_method_types: payment.payment_method_types,
-            stripe_account: account.id,
-            account_email: account.email,
-          }));
+          // Convert Payment Intents with enhanced fields
+          const connectPaymentTransactions = allConnectPayments.map((payment) => {
+            const latestCharge = (payment as any).latest_charge;
+            const outcome = latestCharge?.outcome;
+            const refunds = latestCharge?.refunds?.data || [];
+            const balanceTransaction = latestCharge?.balance_transaction;
+            const transferData = latestCharge?.transfer_data;
+            
+            return {
+              id: payment.id,
+              amount: payment.amount,
+              currency: payment.currency,
+              status: payment.status,
+              description: payment.description ?? undefined,
+              customer: payment.customer
+                ? {
+                    id: String(payment.customer),
+                    email: payment.receipt_email ?? undefined,
+                  }
+                : undefined,
+              // Enhanced payment method with more details
+              payment_method: (payment as any).payment_method
+                ? {
+                    type: (payment as any).payment_method.type,
+                    card: (payment as any).payment_method.card
+                      ? {
+                          brand: (payment as any).payment_method.card.brand,
+                          last4: (payment as any).payment_method.card.last4,
+                          exp_month: (payment as any).payment_method.card.exp_month,
+                          exp_year: (payment as any).payment_method.card.exp_year,
+                          funding: (payment as any).payment_method.card.funding,
+                        }
+                      : undefined,
+                  }
+                : undefined,
+              created: payment.created,
+              metadata: payment.metadata as Record<string, string>,
+              fee: (payment as any).application_fee_amount,
+              net: payment.amount - ((payment as any).application_fee_amount || 0),
+              amount_received: payment.amount_received,
+              amount_capturable: payment.amount_capturable,
+              capture_method: payment.capture_method,
+              confirmation_method: payment.confirmation_method,
+              payment_method_types: payment.payment_method_types,
+              stripe_account: account.id,
+              account_email: account.email,
+              
+              // NEW FIELDS based on ChatGPT recommendations
+              // Decline reason and failure details
+              decline_reason: outcome?.reason || outcome?.failure_code || undefined,
+              failure_message: outcome?.failure_message || undefined,
+              risk_level: outcome?.risk_level || undefined,
+              
+              // Refund information
+              refunded_amount: refunds.reduce((sum: number, refund: any) => sum + refund.amount, 0),
+              refunded_date: refunds.length > 0 ? refunds[0].created : undefined,
+              refund_count: refunds.length,
+              refunds: refunds.map((refund: any) => ({
+                id: refund.id,
+                amount: refund.amount,
+                created: refund.created,
+                reason: refund.reason,
+                status: refund.status,
+              })),
+              
+              // Settlement and transfer information
+              settlement_merchant: transferData?.destination || balanceTransaction?.destination || undefined,
+              transferred_to: transferData?.destination || undefined,
+              transfer_group: latestCharge?.transfer_group || undefined,
+              
+              // Terminal information (if available in metadata)
+              terminal_location: payment.metadata?.terminal_location || payment.metadata?.location_id || undefined,
+              terminal_reader: payment.metadata?.terminal_reader || payment.metadata?.reader_id || undefined,
+              
+              // Balance transaction details
+              balance_transaction_id: balanceTransaction?.id || undefined,
+              net_amount: balanceTransaction?.net || payment.amount - ((payment as any).application_fee_amount || 0),
+              fee_details: balanceTransaction?.fee_details || undefined,
+              
+              // Charge reference
+              charge_id: latestCharge?.id || undefined,
+            };
+          });
 
           // Convert Charges
           const connectChargeTransactions = allConnectCharges.map((charge) => ({

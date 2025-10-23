@@ -15,6 +15,9 @@ export interface StripeTransaction {
         card?: {
             brand: string;
             last4: string;
+            exp_month?: number;
+            exp_year?: number;
+            funding?: string;
         };
     };
     created: number;
@@ -32,6 +35,38 @@ export interface StripeTransaction {
     account_email?: string;
     // Charge reference (for charges that were converted to transactions)
     charge_id?: string;
+
+    // NEW FIELDS based on ChatGPT recommendations
+    // Decline reason and failure details
+    decline_reason?: string;
+    failure_message?: string;
+    risk_level?: string;
+
+    // Refund information
+    refunded_amount?: number;
+    refunded_date?: number;
+    refund_count?: number;
+    refunds?: Array<{
+        id: string;
+        amount: number;
+        created: number;
+        reason?: string;
+        status: string;
+    }>;
+
+    // Settlement and transfer information
+    settlement_merchant?: string;
+    transferred_to?: string;
+    transfer_group?: string;
+
+    // Terminal information
+    terminal_location?: string;
+    terminal_reader?: string;
+
+    // Balance transaction details
+    balance_transaction_id?: string;
+    net_amount?: number;
+    fee_details?: any;
 }
 
 // Stripe Payout Types
@@ -281,6 +316,19 @@ export class StripeService {
         return date.toLocaleDateString('en-US', {
             month: 'short',
             day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true,
+        });
+    }
+
+    // Format refund date for display
+    formatRefundDate(timestamp: number): string {
+        const date = new Date(timestamp * 1000);
+        return date.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
             hour: 'numeric',
             minute: '2-digit',
             hour12: true,
