@@ -17,6 +17,10 @@ import {
     Alert,
     Button,
     Tooltip,
+    Popover,
+    TextField,
+    IconButton,
+    InputAdornment,
 } from '@mui/material';
 import {
     CheckCircle,
@@ -24,6 +28,10 @@ import {
     Error,
     Cancel,
     Refresh,
+    Add,
+    Close,
+    KeyboardArrowUp,
+    KeyboardArrowDown,
 } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
 import { stripeService, StripeTransaction } from '../../services/stripeService';
@@ -131,6 +139,10 @@ const Payments: React.FC = () => {
     const [currentPage, setCurrentPage] = useState(1);
     const [hasMore, setHasMore] = useState(false);
     const [cacheStatus, setCacheStatus] = useState<string>('fresh');
+    const [dateFilterDays, setDateFilterDays] = useState<number | null>(null);
+    const [dateFilterAnchor, setDateFilterAnchor] =
+        useState<HTMLButtonElement | null>(null);
+    const [dateFilterInput, setDateFilterInput] = useState<string>('1');
 
     const fetchData = useCallback(async () => {
         try {
@@ -142,6 +154,7 @@ const Payments: React.FC = () => {
                 limit: 50, // Smaller batches for faster loading
                 page: currentPage,
                 status: selectedSummary !== 'all' ? selectedSummary : undefined,
+                days: dateFilterDays || undefined,
             });
 
             if (response.success) {
@@ -161,7 +174,7 @@ const Payments: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    }, [currentPage, selectedSummary]);
+    }, [currentPage, selectedSummary, dateFilterDays]);
 
     useEffect(() => {
         fetchData();
@@ -189,6 +202,45 @@ const Payments: React.FC = () => {
         setSelectedSummary(type);
         setCurrentPage(1); // Reset to first page when filter changes
         setTransactions([]); // Clear current transactions
+    };
+
+    const handleDateFilterClick = (
+        event: React.MouseEvent<HTMLButtonElement>
+    ) => {
+        setDateFilterAnchor(event.currentTarget);
+    };
+
+    const handleDateFilterClose = () => {
+        setDateFilterAnchor(null);
+    };
+
+    const handleDateFilterApply = () => {
+        const days = parseInt(dateFilterInput);
+        if (days > 0) {
+            setDateFilterDays(days);
+            setCurrentPage(1);
+            setTransactions([]);
+        }
+        handleDateFilterClose();
+    };
+
+    const handleDateFilterClear = () => {
+        setDateFilterDays(null);
+        setDateFilterInput('1');
+        setCurrentPage(1);
+        setTransactions([]);
+    };
+
+    const incrementDays = () => {
+        const current = parseInt(dateFilterInput) || 1;
+        setDateFilterInput(String(current + 1));
+    };
+
+    const decrementDays = () => {
+        const current = parseInt(dateFilterInput) || 1;
+        if (current > 1) {
+            setDateFilterInput(String(current - 1));
+        }
     };
 
     const getStatusIcon = (status: string) => {
@@ -273,6 +325,134 @@ const Payments: React.FC = () => {
                     {error}
                 </Alert>
             )}
+
+            {/* Filter Bar */}
+            <Box
+                sx={{
+                    px: 2,
+                    mb: 2,
+                    display: 'flex',
+                    gap: 1,
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                }}
+            >
+                <Button
+                    variant={dateFilterDays ? 'contained' : 'outlined'}
+                    size="small"
+                    onClick={handleDateFilterClick}
+                    startIcon={<Add />}
+                    sx={{
+                        textTransform: 'none',
+                        borderRadius: 1,
+                        ...(dateFilterDays && {
+                            backgroundColor: '#7c3aed',
+                            '&:hover': { backgroundColor: '#6d28d9' },
+                        }),
+                    }}
+                >
+                    Date and time
+                </Button>
+                {dateFilterDays && (
+                    <Chip
+                        label={`Last ${dateFilterDays} day${dateFilterDays !== 1 ? 's' : ''}`}
+                        onDelete={handleDateFilterClear}
+                        color="primary"
+                        sx={{ backgroundColor: '#7c3aed' }}
+                    />
+                )}
+            </Box>
+
+            {/* Date Filter Popover */}
+            <Popover
+                open={Boolean(dateFilterAnchor)}
+                anchorEl={dateFilterAnchor}
+                onClose={handleDateFilterClose}
+                anchorOrigin={{
+                    vertical: 'bottom',
+                    horizontal: 'left',
+                }}
+                transformOrigin={{
+                    vertical: 'top',
+                    horizontal: 'left',
+                }}
+                PaperProps={{
+                    sx: {
+                        p: 3,
+                        minWidth: 300,
+                        borderRadius: 2,
+                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                    },
+                }}
+            >
+                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                    Filter by: date and time
+                </Typography>
+                <Box sx={{ mb: 2 }}>
+                    <Typography
+                        variant="body2"
+                        sx={{ mb: 1, color: '#6b7280' }}
+                    >
+                        is in the last
+                    </Typography>
+                    <TextField
+                        type="number"
+                        value={dateFilterInput}
+                        onChange={e => setDateFilterInput(e.target.value)}
+                        InputProps={{
+                            endAdornment: (
+                                <InputAdornment position="end">
+                                    <Box
+                                        sx={{
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                        }}
+                                    >
+                                        <IconButton
+                                            size="small"
+                                            onClick={incrementDays}
+                                            sx={{
+                                                height: 16,
+                                                width: 16,
+                                                mb: 0.5,
+                                            }}
+                                        >
+                                            <KeyboardArrowUp fontSize="small" />
+                                        </IconButton>
+                                        <IconButton
+                                            size="small"
+                                            onClick={decrementDays}
+                                            sx={{ height: 16, width: 16 }}
+                                        >
+                                            <KeyboardArrowDown fontSize="small" />
+                                        </IconButton>
+                                    </Box>
+                                </InputAdornment>
+                            ),
+                        }}
+                        sx={{ width: '100%' }}
+                    />
+                    <Typography
+                        variant="body2"
+                        sx={{ mt: 1, color: '#6b7280' }}
+                    >
+                        days
+                    </Typography>
+                </Box>
+                <Button
+                    variant="contained"
+                    fullWidth
+                    onClick={handleDateFilterApply}
+                    sx={{
+                        backgroundColor: '#7c3aed',
+                        '&:hover': { backgroundColor: '#6d28d9' },
+                        textTransform: 'none',
+                        py: 1.5,
+                    }}
+                >
+                    Apply
+                </Button>
+            </Popover>
 
             {/* Summary Cards - Match Stripe Dashboard: All, Succeeded, Refunded, Disputed, Failed, Uncaptured */}
             <Grid container spacing={2} sx={{ mb: 3, px: 2 }}>

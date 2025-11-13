@@ -101,11 +101,13 @@ export class StripeController {
     @Query('limit') limit?: string,
     @Query('page') page?: string,
     @Query('status') status?: string,
+    @Query('days') days?: string,
   ) {
     return this.stripeService.getAllTransactionsFast({
       limit: limit ? parseInt(limit) : undefined,
       page: page ? parseInt(page) : undefined,
       status: status,
+      days: days ? parseInt(days) : undefined,
     });
   }
 

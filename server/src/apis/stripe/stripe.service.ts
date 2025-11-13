@@ -325,6 +325,7 @@ export class StripeService {
     limit?: number;
     page?: number;
     status?: string;
+    days?: number;
   }) {
     this.ensureStripe();
     
@@ -405,10 +406,21 @@ export class StripeService {
       // Sort by creation date (newest first)
       uniqueTransactions.sort((a, b) => b.created - a.created);
 
+      // Apply date filter if provided (is in the last X days)
+      let dateFilteredTransactions = uniqueTransactions;
+      if (params?.days && params.days > 0) {
+        const now = Math.floor(Date.now() / 1000);
+        const daysAgo = now - (params.days * 24 * 60 * 60);
+        dateFilteredTransactions = uniqueTransactions.filter((transaction) => {
+          return transaction.created >= daysAgo;
+        });
+        console.log(`Filtered by date (last ${params.days} days): ${dateFilteredTransactions.length} transactions (from ${uniqueTransactions.length} total)`);
+      }
+
       // Apply status filter if provided
-      let filteredTransactions = uniqueTransactions;
+      let filteredTransactions = dateFilteredTransactions;
       if (params?.status && params.status !== 'all') {
-        filteredTransactions = uniqueTransactions.filter((transaction: any) => {
+        filteredTransactions = dateFilteredTransactions.filter((transaction: any) => {
           const status = transaction.status as string;
           switch (params.status) {
             case 'succeeded':
@@ -432,7 +444,7 @@ export class StripeService {
               return true;
           }
         });
-        console.log(`Filtered by status '${params.status}': ${filteredTransactions.length} transactions (from ${uniqueTransactions.length} total)`);
+        console.log(`Filtered by status '${params.status}': ${filteredTransactions.length} transactions (from ${dateFilteredTransactions.length} total)`);
       }
 
       // Apply pagination on the backend side
@@ -440,11 +452,11 @@ export class StripeService {
       const endIndex = startIndex + limit;
       const paginatedTransactions = filteredTransactions.slice(startIndex, endIndex);
 
-      console.log(`Page ${page}: Showing transactions ${startIndex + 1} to ${Math.min(endIndex, filteredTransactions.length)} of ${filteredTransactions.length} total (filtered from ${uniqueTransactions.length} unique)`);
+      console.log(`Page ${page}: Showing transactions ${startIndex + 1} to ${Math.min(endIndex, filteredTransactions.length)} of ${filteredTransactions.length} total (filtered from ${dateFilteredTransactions.length} date-filtered, ${uniqueTransactions.length} unique)`);
 
-      // Calculate summary from ALL transactions (not just current page)
+      // Calculate summary from date-filtered transactions (not just current page)
       // Match Stripe dashboard: All, Succeeded, Refunded, Disputed, Failed, Uncaptured
-      const summary = uniqueTransactions.reduce((acc, transaction: any) => {
+      const summary = dateFilteredTransactions.reduce((acc, transaction: any) => {
         acc.total++;
         const status = transaction.status as string;
         
@@ -491,7 +503,7 @@ export class StripeService {
       // Cache disabled for transactions to ensure accurate data
       // this.cache.set(cacheKey, result, 120000);
       
-      console.log(`Total transactions: ${uniqueTransactions.length} unique, ${filteredTransactions.length} after filter, returning ${paginatedTransactions.length} for page ${page}`);
+      console.log(`Total transactions: ${uniqueTransactions.length} unique, ${dateFilteredTransactions.length} after date filter, ${filteredTransactions.length} after status filter, returning ${paginatedTransactions.length} for page ${page}`);
       return result;
     } catch (error) {
       console.error('Error fetching all transactions:', error);

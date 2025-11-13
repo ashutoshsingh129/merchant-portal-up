@@ -710,6 +710,7 @@ export class StripeService {
         limit?: number;
         page?: number;
         status?: string;
+        days?: number;
     }): Promise<
         ApiResponse<{
             transactions: StripeTransactionListResponse;
@@ -729,6 +730,7 @@ export class StripeService {
             if (params?.limit) query.append('limit', String(params.limit));
             if (params?.page) query.append('page', String(params.page));
             if (params?.status) query.append('status', params.status);
+            if (params?.days) query.append('days', String(params.days));
 
             const res = await fetch(
                 `${this.baseUrl}/stripe/all-transactions-fast?${query.toString()}`
