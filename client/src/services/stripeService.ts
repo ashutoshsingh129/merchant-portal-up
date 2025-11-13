@@ -504,8 +504,276 @@ export class StripeService {
         }
     }
 
-    // Get ALL payouts from ALL accounts (platform + Connect)
-    async getAllPayoutsWithSummary(params?: { limit?: number }): Promise<
+    // OPTIMIZED METHODS FOR FAST LOADING
+
+    // Get transactions with fast loading and pagination
+    async getTransactionsFast(params?: {
+        limit?: number;
+        page?: number;
+        account?: string;
+    }): Promise<ApiResponse<StripeTransactionListResponse>> {
+        try {
+            const query = new URLSearchParams();
+            if (params?.limit) query.append('limit', String(params.limit));
+            if (params?.page) query.append('page', String(params.page));
+            if (params?.account) query.append('account', params.account);
+
+            const res = await fetch(
+                `${this.baseUrl}/stripe/transactions-fast?${query.toString()}`
+            );
+            if (!res.ok) throw new Error('Failed to fetch transactions');
+            const body = await res.json();
+
+            return {
+                data: {
+                    data: body.data,
+                    has_more: body.has_more,
+                    total_count: body.total_count,
+                },
+                message: 'Transactions fetched successfully',
+                success: true,
+            };
+        } catch (error) {
+            console.error('Error fetching fast transactions:', error);
+            return {
+                data: { data: [], has_more: false },
+                message:
+                    error instanceof Error
+                        ? error.message
+                        : 'Failed to fetch transactions',
+                success: false,
+            };
+        }
+    }
+
+    // Get payouts with fast loading and pagination
+    async getPayoutsFast(params?: {
+        limit?: number;
+        page?: number;
+        account?: string;
+    }): Promise<ApiResponse<StripePayoutListResponse>> {
+        try {
+            const query = new URLSearchParams();
+            if (params?.limit) query.append('limit', String(params.limit));
+            if (params?.page) query.append('page', String(params.page));
+            if (params?.account) query.append('account', params.account);
+
+            const res = await fetch(
+                `${this.baseUrl}/stripe/payouts-fast?${query.toString()}`
+            );
+            if (!res.ok) throw new Error('Failed to fetch payouts');
+            const body = await res.json();
+
+            return {
+                data: {
+                    data: body.data,
+                    has_more: body.has_more,
+                    total_count: body.total_count,
+                },
+                message: 'Payouts fetched successfully',
+                success: true,
+            };
+        } catch (error) {
+            console.error('Error fetching fast payouts:', error);
+            return {
+                data: { data: [], has_more: false },
+                message:
+                    error instanceof Error
+                        ? error.message
+                        : 'Failed to fetch payouts',
+                success: false,
+            };
+        }
+    }
+
+    // Get summary data efficiently
+    async getSummaryFast(account?: string): Promise<
+        ApiResponse<{
+            total: number;
+            succeeded: number;
+            pending: number;
+            failed: number;
+            refunded: number;
+            disputed: number;
+            uncaptured: number;
+        }>
+    > {
+        try {
+            const query = new URLSearchParams();
+            if (account) query.append('account', account);
+
+            const res = await fetch(
+                `${this.baseUrl}/stripe/summary-fast?${query.toString()}`
+            );
+            if (!res.ok) throw new Error('Failed to fetch summary');
+            const body = await res.json();
+
+            return {
+                data: body,
+                message: 'Summary fetched successfully',
+                success: true,
+            };
+        } catch (error) {
+            console.error('Error fetching summary:', error);
+            return {
+                data: {
+                    total: 0,
+                    succeeded: 0,
+                    pending: 0,
+                    failed: 0,
+                    refunded: 0,
+                    disputed: 0,
+                    uncaptured: 0,
+                },
+                message:
+                    error instanceof Error
+                        ? error.message
+                        : 'Failed to fetch summary',
+                success: false,
+            };
+        }
+    }
+
+    // Get accounts efficiently
+    async getAccountsFast(): Promise<
+        ApiResponse<{
+            accounts: Array<{
+                id: string;
+                email: string;
+                country: string;
+                type: string;
+                business_type: string;
+                charges_enabled: boolean;
+                payouts_enabled: boolean;
+            }>;
+            total: number;
+        }>
+    > {
+        try {
+            const res = await fetch(`${this.baseUrl}/stripe/accounts-fast`);
+            if (!res.ok) throw new Error('Failed to fetch accounts');
+            const body = await res.json();
+
+            return {
+                data: body,
+                message: 'Accounts fetched successfully',
+                success: true,
+            };
+        } catch (error) {
+            console.error('Error fetching accounts:', error);
+            return {
+                data: { accounts: [], total: 0 },
+                message:
+                    error instanceof Error
+                        ? error.message
+                        : 'Failed to fetch accounts',
+                success: false,
+            };
+        }
+    }
+
+    // Clear cache
+    async clearCache(
+        pattern?: string
+    ): Promise<ApiResponse<{ message: string }>> {
+        try {
+            const res = await fetch(`${this.baseUrl}/stripe/clear-cache`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ pattern }),
+            });
+            if (!res.ok) throw new Error('Failed to clear cache');
+            const body = await res.json();
+
+            return {
+                data: body,
+                message: 'Cache cleared successfully',
+                success: true,
+            };
+        } catch (error) {
+            console.error('Error clearing cache:', error);
+            return {
+                data: { message: 'Failed to clear cache' },
+                message:
+                    error instanceof Error
+                        ? error.message
+                        : 'Failed to clear cache',
+                success: false,
+            };
+        }
+    }
+
+    // Get transactions from ALL accounts (platform + Connect) - optimized
+    async getAllTransactionsFast(params?: {
+        limit?: number;
+        page?: number;
+        status?: string;
+    }): Promise<
+        ApiResponse<{
+            transactions: StripeTransactionListResponse;
+            summary: {
+                total: number;
+                succeeded: number;
+                pending: number;
+                failed: number;
+                refunded: number;
+                disputed: number;
+                uncaptured: number;
+            };
+        }>
+    > {
+        try {
+            const query = new URLSearchParams();
+            if (params?.limit) query.append('limit', String(params.limit));
+            if (params?.page) query.append('page', String(params.page));
+            if (params?.status) query.append('status', params.status);
+
+            const res = await fetch(
+                `${this.baseUrl}/stripe/all-transactions-fast?${query.toString()}`
+            );
+            if (!res.ok) throw new Error('Failed to fetch all transactions');
+            const body = await res.json();
+
+            return {
+                data: {
+                    transactions: body.transactions,
+                    summary: body.summary,
+                },
+                message: 'All transactions fetched successfully',
+                success: true,
+            };
+        } catch (error) {
+            console.error('Error fetching all transactions:', error);
+            return {
+                data: {
+                    transactions: { data: [], has_more: false },
+                    summary: {
+                        total: 0,
+                        succeeded: 0,
+                        pending: 0,
+                        failed: 0,
+                        refunded: 0,
+                        disputed: 0,
+                        uncaptured: 0,
+                    },
+                },
+                message:
+                    error instanceof Error
+                        ? error.message
+                        : 'Failed to fetch all transactions',
+                success: false,
+            };
+        }
+    }
+
+    // Get ALL payouts from ALL accounts (platform + Connect) - optimized
+    async getAllPayoutsFast(params?: {
+        limit?: number;
+        page?: number;
+        status?: string;
+    }): Promise<
         ApiResponse<{
             payouts: StripePayoutListResponse;
             summary: {
@@ -519,19 +787,15 @@ export class StripeService {
         }>
     > {
         try {
-            const stripeParams: any = {
-                limit: params?.limit || 200,
-            };
-
-            const query = new URLSearchParams({
-                limit: String(stripeParams.limit),
-            });
+            const query = new URLSearchParams();
+            if (params?.limit) query.append('limit', String(params.limit));
+            if (params?.page) query.append('page', String(params.page));
+            if (params?.status) query.append('status', params.status);
 
             const res = await fetch(
-                `${this.baseUrl}/stripe/all-payouts?${query.toString()}`
+                `${this.baseUrl}/stripe/all-payouts-fast?${query.toString()}`
             );
-            if (!res.ok)
-                throw new Error('Failed to fetch all payouts with summary');
+            if (!res.ok) throw new Error('Failed to fetch all payouts');
             const body = await res.json();
 
             return {
@@ -539,11 +803,11 @@ export class StripeService {
                     payouts: body.payouts,
                     summary: body.summary,
                 },
-                message: 'All payouts and summary fetched successfully',
+                message: 'All payouts fetched successfully',
                 success: true,
             };
         } catch (error) {
-            console.error('Error fetching all payouts with summary:', error);
+            console.error('Error fetching all payouts:', error);
             return {
                 data: {
                     payouts: { data: [], has_more: false },
@@ -559,7 +823,7 @@ export class StripeService {
                 message:
                     error instanceof Error
                         ? error.message
-                        : 'Failed to fetch all payouts with summary',
+                        : 'Failed to fetch all payouts',
                 success: false,
             };
         }

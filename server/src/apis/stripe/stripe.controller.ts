@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Param, Query, Post, Body } from '@nestjs/common';
 import { StripeService } from './stripe.service';
 
 @Controller('stripe')
@@ -79,6 +79,78 @@ export class StripeController {
     return this.stripeService.getAllPayoutsWithSummary({
       limit: limit ? parseInt(limit) : undefined,
     });
+  }
+
+  // NEW OPTIMIZED ENDPOINTS FOR FAST LOADING
+  
+  @Get('transactions-fast')
+  getTransactionsFast(
+    @Query('limit') limit?: string,
+    @Query('page') page?: string,
+    @Query('account') account?: string,
+  ) {
+    return this.stripeService.getTransactionsFast({
+      limit: limit ? parseInt(limit) : undefined,
+      page: page ? parseInt(page) : undefined,
+      account,
+    });
+  }
+
+  @Get('all-transactions-fast')
+  getAllTransactionsFast(
+    @Query('limit') limit?: string,
+    @Query('page') page?: string,
+    @Query('status') status?: string,
+  ) {
+    return this.stripeService.getAllTransactionsFast({
+      limit: limit ? parseInt(limit) : undefined,
+      page: page ? parseInt(page) : undefined,
+      status: status,
+    });
+  }
+
+  @Get('all-payouts-fast')
+  getAllPayoutsFast(
+    @Query('limit') limit?: string,
+    @Query('page') page?: string,
+    @Query('status') status?: string,
+  ) {
+    return this.stripeService.getAllPayoutsFast({
+      limit: limit ? parseInt(limit) : undefined,
+      page: page ? parseInt(page) : undefined,
+      status: status,
+    });
+  }
+
+  @Get('payouts-fast')
+  getPayoutsFast(
+    @Query('limit') limit?: string,
+    @Query('page') page?: string,
+    @Query('account') account?: string,
+  ) {
+    return this.stripeService.getPayoutsFast({
+      limit: limit ? parseInt(limit) : undefined,
+      page: page ? parseInt(page) : undefined,
+      account,
+    });
+  }
+
+  @Get('summary-fast')
+  getSummaryFast(
+    @Query('account') account?: string,
+  ) {
+    return this.stripeService.getSummaryFast(account);
+  }
+
+  @Get('accounts-fast')
+  getAccountsFast() {
+    return this.stripeService.getAccountsFast();
+  }
+
+  @Post('clear-cache')
+  clearCache(@Body() body: { pattern?: string }) {
+    this.stripeService.clearCache(body.pattern);
+    return { message: 'Cache cleared successfully' };
   }
 }
 

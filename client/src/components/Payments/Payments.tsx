@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     Box,
     Typography,
@@ -15,6 +15,8 @@ import {
     Grid,
     CircularProgress,
     Alert,
+    Button,
+    Tooltip,
 } from '@mui/material';
 import {
     CheckCircle,
@@ -118,38 +120,39 @@ const Payments: React.FC = () => {
     const [summary, setSummary] = useState({
         total: 0,
         succeeded: 0,
-        pending: 0,
-        failed: 0,
         refunded: 0,
         disputed: 0,
+        failed: 0,
         uncaptured: 0,
     });
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [selectedSummary, setSelectedSummary] = useState('all');
-    const hasFetched = useRef(false);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [hasMore, setHasMore] = useState(false);
+    const [cacheStatus, setCacheStatus] = useState<string>('fresh');
 
-    useEffect(() => {
-        // Prevent duplicate calls in React StrictMode
-        if (!hasFetched.current) {
-            hasFetched.current = true;
-            fetchData();
-        }
-    }, []);
-
-    const fetchData = async () => {
+    const fetchData = useCallback(async () => {
         try {
             setLoading(true);
             setError(null);
 
-            // Use the new method that fetches from ALL accounts (platform + Connect)
-            const response = await stripeService.getAllTransactionsWithSummary({
-                limit: 500, // Show more transactions from all accounts
+            // Fetch platform transactions only
+            const response = await stripeService.getAllTransactionsFast({
+                limit: 50, // Smaller batches for faster loading
+                page: currentPage,
+                status: selectedSummary !== 'all' ? selectedSummary : undefined,
             });
 
             if (response.success) {
+                // Always replace data to avoid duplicates
+                // Backend handles pagination, so we just show what it returns
                 setTransactions(response.data.transactions.data);
+                setHasMore(response.data.transactions.has_more);
                 setSummary(response.data.summary);
+                console.log(
+                    `Payments: Received ${response.data.transactions.data.length} transactions, total: ${response.data.transactions.total_count}, has_more: ${response.data.transactions.has_more}`
+                );
             } else {
                 setError(response.message);
             }
@@ -158,11 +161,34 @@ const Payments: React.FC = () => {
         } finally {
             setLoading(false);
         }
+    }, [currentPage, selectedSummary]);
+
+    useEffect(() => {
+        fetchData();
+    }, [fetchData]);
+
+    const loadMore = () => {
+        if (hasMore && !loading) {
+            setCurrentPage(prev => prev + 1);
+        }
+    };
+
+    const clearCache = async () => {
+        try {
+            await stripeService.clearCache();
+            // Refresh data after clearing cache
+            setCurrentPage(1);
+            setTransactions([]);
+            fetchData();
+        } catch (error) {
+            console.error('Failed to clear cache:', error);
+        }
     };
 
     const handleSummaryClick = (type: string) => {
         setSelectedSummary(type);
-        // In a real app, this would filter transactions
+        setCurrentPage(1); // Reset to first page when filter changes
+        setTransactions([]); // Clear current transactions
     };
 
     const getStatusIcon = (status: string) => {
@@ -216,7 +242,30 @@ const Payments: React.FC = () => {
     return (
         <StyledContainer>
             <HeaderSection>
-                <PageTitle>Payments</PageTitle>
+                <Box
+                    sx={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                    }}
+                >
+                    <PageTitle>Payments</PageTitle>
+                    <Tooltip title="Cache expires in 2 minutes. Click to refresh with latest data.">
+                        <Button
+                            variant="outlined"
+                            size="small"
+                            onClick={clearCache}
+                            sx={{ ml: 2 }}
+                            color={
+                                cacheStatus === 'cached' ? 'success' : 'primary'
+                            }
+                        >
+                            {cacheStatus === 'cached'
+                                ? '🔄 Cached'
+                                : 'Clear Cache'}
+                        </Button>
+                    </Tooltip>
+                </Box>
             </HeaderSection>
 
             {error && (
@@ -225,7 +274,7 @@ const Payments: React.FC = () => {
                 </Alert>
             )}
 
-            {/* Summary Cards */}
+            {/* Summary Cards - Match Stripe Dashboard: All, Succeeded, Refunded, Disputed, Failed, Uncaptured */}
             <Grid container spacing={2} sx={{ mb: 3, px: 2 }}>
                 <Grid size={{ xs: 12, sm: 6, md: 2 }}>
                     <SummaryCard
@@ -256,28 +305,14 @@ const Payments: React.FC = () => {
                 <Grid size={{ xs: 12, sm: 6, md: 2 }}>
                     <SummaryCard
                         className={
-                            selectedSummary === 'pending' ? 'selected' : ''
+                            selectedSummary === 'refunded' ? 'selected' : ''
                         }
-                        onClick={() => handleSummaryClick('pending')}
+                        onClick={() => handleSummaryClick('refunded')}
                         sx={{ cursor: 'pointer' }}
                     >
                         <SummaryCardContent>
-                            <SummaryNumber>{summary.pending}</SummaryNumber>
-                            <SummaryLabel>Pending</SummaryLabel>
-                        </SummaryCardContent>
-                    </SummaryCard>
-                </Grid>
-                <Grid size={{ xs: 12, sm: 6, md: 2 }}>
-                    <SummaryCard
-                        className={
-                            selectedSummary === 'failed' ? 'selected' : ''
-                        }
-                        onClick={() => handleSummaryClick('failed')}
-                        sx={{ cursor: 'pointer' }}
-                    >
-                        <SummaryCardContent>
-                            <SummaryNumber>{summary.failed}</SummaryNumber>
-                            <SummaryLabel>Failed</SummaryLabel>
+                            <SummaryNumber>{summary.refunded}</SummaryNumber>
+                            <SummaryLabel>Refunded</SummaryLabel>
                         </SummaryCardContent>
                     </SummaryCard>
                 </Grid>
@@ -292,6 +327,20 @@ const Payments: React.FC = () => {
                         <SummaryCardContent>
                             <SummaryNumber>{summary.disputed}</SummaryNumber>
                             <SummaryLabel>Disputed</SummaryLabel>
+                        </SummaryCardContent>
+                    </SummaryCard>
+                </Grid>
+                <Grid size={{ xs: 12, sm: 6, md: 2 }}>
+                    <SummaryCard
+                        className={
+                            selectedSummary === 'failed' ? 'selected' : ''
+                        }
+                        onClick={() => handleSummaryClick('failed')}
+                        sx={{ cursor: 'pointer' }}
+                    >
+                        <SummaryCardContent>
+                            <SummaryNumber>{summary.failed}</SummaryNumber>
+                            <SummaryLabel>Failed</SummaryLabel>
                         </SummaryCardContent>
                     </SummaryCard>
                 </Grid>

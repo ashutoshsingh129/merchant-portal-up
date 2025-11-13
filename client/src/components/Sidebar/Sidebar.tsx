@@ -62,9 +62,11 @@ const StyledDrawer = styled(Drawer, {
 const DrawerHeader = styled('div')(({ theme }) => ({
     display: 'flex',
     alignItems: 'center',
-    padding: theme.spacing(0, 1),
+    padding: theme.spacing(2),
     ...theme.mixins.toolbar,
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
+    minHeight: '64px',
+    height: '64px',
 }));
 
 const SectionTitle = styled(Typography)(({ theme }) => ({
@@ -80,6 +82,9 @@ const SectionTitle = styled(Typography)(({ theme }) => ({
 const StyledListItemButton = styled(ListItemButton)(({ theme }) => ({
     borderRadius: theme.spacing(1),
     margin: theme.spacing(0.5, 1),
+    display: 'flex',
+    alignItems: 'center',
+    width: '100%',
     '&:hover': {
         backgroundColor: 'rgba(74, 85, 104, 0.1)',
     },
@@ -104,6 +109,31 @@ const StyledListItemText = styled(ListItemText)({
         fontWeight: 500,
     },
 });
+
+const ToggleButton = styled(IconButton)(({ theme }) => ({
+    padding: theme.spacing(1),
+    borderRadius: theme.spacing(1),
+    backgroundColor: 'transparent',
+    color: '#4a5568',
+    '&:hover': {
+        backgroundColor: 'rgba(74, 85, 104, 0.1)',
+    },
+    transition: 'all 0.2s ease-in-out',
+}));
+
+const ExpandIcon = styled(Box)(({ theme }) => ({
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: '24px',
+    height: '24px',
+    color: '#6b7280',
+    transition: 'color 0.2s ease-in-out',
+    marginLeft: 'auto',
+    '&:hover': {
+        color: '#4a5568',
+    },
+}));
 
 interface SidebarProps {
     open: boolean;
@@ -156,9 +186,9 @@ const Sidebar: React.FC<SidebarProps> = ({ open, onToggle }) => {
     return (
         <StyledDrawer variant="permanent" open={open}>
             <DrawerHeader>
-                <IconButton onClick={onToggle}>
+                <ToggleButton onClick={onToggle}>
                     {open ? <ChevronLeft /> : <ChevronRight />}
-                </IconButton>
+                </ToggleButton>
             </DrawerHeader>
 
             <List>
@@ -170,27 +200,35 @@ const Sidebar: React.FC<SidebarProps> = ({ open, onToggle }) => {
                                 onClick={handleTransactionsToggle}
                                 sx={{ pl: 2 }}
                             >
-                                <StyledListItemIcon>
-                                    {item.icon}
-                                </StyledListItemIcon>
-                                <Collapse
-                                    in={open}
-                                    timeout="auto"
-                                    unmountOnExit
+                                <Box
+                                    sx={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        flex: 1,
+                                    }}
                                 >
-                                    <StyledListItemText primary={item.label} />
-                                </Collapse>
-                                <Collapse
-                                    in={open}
-                                    timeout="auto"
-                                    unmountOnExit
-                                >
-                                    {transactionsOpen ? (
-                                        <ExpandLess />
-                                    ) : (
-                                        <ExpandMore />
-                                    )}
-                                </Collapse>
+                                    <StyledListItemIcon>
+                                        {item.icon}
+                                    </StyledListItemIcon>
+                                    <Collapse
+                                        in={open}
+                                        timeout="auto"
+                                        unmountOnExit
+                                    >
+                                        <StyledListItemText
+                                            primary={item.label}
+                                        />
+                                    </Collapse>
+                                </Box>
+                                {open && (
+                                    <ExpandIcon>
+                                        {transactionsOpen ? (
+                                            <ExpandLess fontSize="small" />
+                                        ) : (
+                                            <ExpandMore fontSize="small" />
+                                        )}
+                                    </ExpandIcon>
+                                )}
                             </StyledListItemButton>
                         </ListItem>
 

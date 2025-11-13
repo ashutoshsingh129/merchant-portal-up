@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     Box,
     Typography,
@@ -15,6 +15,8 @@ import {
     Grid,
     CircularProgress,
     Alert,
+    Button,
+    Tooltip,
 } from '@mui/material';
 import {
     CheckCircle,
@@ -125,29 +127,30 @@ const Payouts: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [selectedSummary, setSelectedSummary] = useState('all');
-    const hasFetched = useRef(false);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [hasMore, setHasMore] = useState(false);
 
-    useEffect(() => {
-        // Prevent duplicate calls in React StrictMode
-        if (!hasFetched.current) {
-            hasFetched.current = true;
-            fetchData();
-        }
-    }, []);
-
-    const fetchData = async () => {
+    const fetchData = useCallback(async () => {
         try {
             setLoading(true);
             setError(null);
 
-            // Use the new method that fetches from ALL accounts (platform + Connect)
-            const response = await stripeService.getAllPayoutsWithSummary({
-                limit: 500, // Show more payouts from all accounts
+            // Fetch platform payouts only
+            const response = await stripeService.getAllPayoutsFast({
+                limit: 50, // Smaller batches for faster loading
+                page: currentPage,
+                status: selectedSummary !== 'all' ? selectedSummary : undefined,
             });
 
             if (response.success) {
+                // Always replace data to avoid duplicates
+                // Backend handles pagination, so we just show what it returns
                 setPayouts(response.data.payouts.data);
+                setHasMore(response.data.payouts.has_more);
                 setSummary(response.data.summary);
+                console.log(
+                    `Payouts: Received ${response.data.payouts.data.length} payouts, total: ${response.data.payouts.total_count}, has_more: ${response.data.payouts.has_more}`
+                );
             } else {
                 setError(response.message);
             }
@@ -156,11 +159,34 @@ const Payouts: React.FC = () => {
         } finally {
             setLoading(false);
         }
+    }, [currentPage, selectedSummary]);
+
+    useEffect(() => {
+        fetchData();
+    }, [fetchData]);
+
+    const loadMore = () => {
+        if (hasMore && !loading) {
+            setCurrentPage(prev => prev + 1);
+        }
+    };
+
+    const clearCache = async () => {
+        try {
+            await stripeService.clearCache();
+            // Refresh data after clearing cache
+            setCurrentPage(1);
+            setPayouts([]);
+            fetchData();
+        } catch (error) {
+            console.error('Failed to clear cache:', error);
+        }
     };
 
     const handleSummaryClick = (type: string) => {
         setSelectedSummary(type);
-        // In a real app, this would filter payouts
+        setCurrentPage(1); // Reset to first page when filter changes
+        setPayouts([]); // Clear current payouts
     };
 
     const getStatusIcon = (status: string) => {
@@ -220,7 +246,25 @@ const Payouts: React.FC = () => {
     return (
         <StyledContainer>
             <HeaderSection>
-                <PageTitle>Payouts</PageTitle>
+                <Box
+                    sx={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                    }}
+                >
+                    <PageTitle>Payouts</PageTitle>
+                    <Tooltip title="Cache expires in 5 minutes. Click to refresh with latest data.">
+                        <Button
+                            variant="outlined"
+                            size="small"
+                            onClick={clearCache}
+                            sx={{ ml: 2 }}
+                        >
+                            Clear Cache
+                        </Button>
+                    </Tooltip>
+                </Box>
             </HeaderSection>
 
             {error && (

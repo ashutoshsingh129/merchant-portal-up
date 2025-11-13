@@ -1,13 +1,56 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import Stripe from 'stripe';
 
+// Simple in-memory cache for performance optimization
+interface CacheEntry {
+  data: any;
+  timestamp: number;
+  ttl: number;
+}
+
+class SimpleCache {
+  private cache = new Map<string, CacheEntry>();
+  
+  set(key: string, data: any, ttlMs: number = 300000) { // 5 minutes default
+    this.cache.set(key, {
+      data,
+      timestamp: Date.now(),
+      ttl: ttlMs
+    });
+  }
+  
+  get(key: string): any | null {
+    const entry = this.cache.get(key);
+    if (!entry) return null;
+    
+    if (Date.now() - entry.timestamp > entry.ttl) {
+      this.cache.delete(key);
+      return null;
+    }
+    
+    return entry.data;
+  }
+  
+  clear() {
+    this.cache.clear();
+  }
+  
+  delete(key: string) {
+    this.cache.delete(key);
+  }
+}
+
 @Injectable()
 export class StripeService {
   private stripe: Stripe | null;
+  private cache = new SimpleCache();
 
   constructor() {
     const secret = (process.env.STRIPE_SECRET_KEY || process.env.REACT_APP_STRIPE_SECRET_KEY) as string | undefined;
     this.stripe = secret ? new Stripe(secret) : null;
+    // Clear cache on service initialization to ensure fresh data
+    this.cache.clear();
+    console.log('Stripe service initialized - all cache cleared (payouts cache disabled)');
   }
 
   private ensureStripe() {
@@ -18,6 +61,611 @@ export class StripeService {
     }
   }
 
+  // OPTIMIZED METHODS FOR FAST LOADING
+  
+  /**
+   * Fast transactions loading with minimal API calls and caching
+   */
+  async getTransactionsFast(params: {
+    limit?: number;
+    page?: number;
+    account?: string;
+  }) {
+    this.ensureStripe();
+    
+    const limit = Math.min(params?.limit || 50, 100); // Cap at 100 for performance
+    const page = params?.page || 1;
+    const account = params?.account || 'platform';
+    
+    const cacheKey = `transactions_${account}_${limit}_${page}`;
+    const cached = this.cache.get(cacheKey);
+    if (cached) {
+      console.log(`Cache hit for transactions: ${account}_${limit}_${page}`);
+      return cached;
+    }
+
+    try {
+      // Minimal expansions for fast loading
+      const expansions = ['data.customer'];
+      
+      let payments;
+      if (account === 'platform') {
+        payments = await this.stripe!.paymentIntents.list({
+          limit,
+          expand: expansions,
+        });
+      } else {
+        payments = await this.stripe!.paymentIntents.list({
+          limit,
+          expand: expansions,
+        }, {
+          stripeAccount: account
+        });
+      }
+
+      // Fast transformation with minimal data processing
+      const transactions = payments.data.map((payment) => ({
+        id: payment.id,
+        amount: payment.amount,
+        currency: payment.currency,
+        status: payment.status,
+        description: payment.description,
+        customer: payment.customer ? {
+          id: String(payment.customer),
+          email: payment.receipt_email,
+        } : undefined,
+        created: payment.created,
+        metadata: payment.metadata,
+        stripe_account: account,
+      }));
+
+      const result = {
+        data: transactions,
+        has_more: payments.has_more,
+        total_count: transactions.length,
+        page,
+        limit,
+      };
+
+      // Cache for 2 minutes
+      this.cache.set(cacheKey, result, 120000);
+      
+      return result;
+    } catch (error) {
+      console.error('Error fetching fast transactions:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Fast payouts loading with minimal API calls and caching
+   */
+  async getPayoutsFast(params: {
+    limit?: number;
+    page?: number;
+    account?: string;
+  }) {
+    this.ensureStripe();
+    
+    const limit = Math.min(params?.limit || 50, 100); // Cap at 100 for performance
+    const page = params?.page || 1;
+    const account = params?.account || 'platform';
+    
+    const cacheKey = `payouts_${account}_${limit}_${page}`;
+    const cached = this.cache.get(cacheKey);
+    if (cached) {
+      console.log(`Cache hit for payouts: ${account}_${limit}_${page}`);
+      return cached;
+    }
+
+    try {
+      let payouts;
+      if (account === 'platform') {
+        payouts = await this.stripe!.payouts.list({
+          limit,
+        });
+      } else {
+        payouts = await this.stripe!.payouts.list({
+          limit,
+        }, {
+          stripeAccount: account
+        });
+      }
+
+      // Fast transformation with minimal data processing
+      const formattedPayouts = payouts.data.map((payout) => ({
+        id: payout.id,
+        amount: payout.amount,
+        currency: payout.currency,
+        status: payout.status,
+        arrival_date: payout.arrival_date,
+        created: payout.created,
+        description: payout.description,
+        destination: payout.destination,
+        failure_code: payout.failure_code,
+        failure_message: payout.failure_message,
+        method: payout.method,
+        stripe_account: account,
+      }));
+
+      const result = {
+        data: formattedPayouts,
+        has_more: payouts.has_more,
+        total_count: formattedPayouts.length,
+        page,
+        limit,
+      };
+
+      // Cache for 5 minutes (payouts change less frequently)
+      this.cache.set(cacheKey, result, 300000);
+      
+      return result;
+    } catch (error) {
+      console.error('Error fetching fast payouts:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get summary data efficiently with caching
+   */
+  async getSummaryFast(account?: string) {
+    this.ensureStripe();
+    
+    const cacheKey = `summary_${account || 'all'}`;
+    const cached = this.cache.get(cacheKey);
+    if (cached) {
+      console.log(`Cache hit for summary: ${account || 'all'}`);
+      return cached;
+    }
+
+    try {
+      // Get recent transactions for summary (last 30 days)
+      const thirtyDaysAgo = Math.floor((Date.now() - 30 * 24 * 60 * 60 * 1000) / 1000);
+      
+      let payments;
+      if (account === 'platform' || !account) {
+        payments = await this.stripe!.paymentIntents.list({
+          limit: 100,
+          created: { gte: thirtyDaysAgo },
+        });
+      } else {
+        payments = await this.stripe!.paymentIntents.list({
+          limit: 100,
+          created: { gte: thirtyDaysAgo },
+        }, {
+          stripeAccount: account
+        });
+      }
+
+      // Calculate summary efficiently
+      const summary = payments.data.reduce((acc, payment) => {
+        acc.total++;
+        switch (payment.status) {
+          case 'succeeded':
+            acc.succeeded++;
+            break;
+          case 'pending':
+            acc.pending++;
+            break;
+          case 'failed':
+            acc.failed++;
+            break;
+          case 'canceled':
+            acc.disputed++;
+            break;
+          default:
+            acc.uncaptured++;
+        }
+        return acc;
+      }, {
+        total: 0,
+        succeeded: 0,
+        pending: 0,
+        failed: 0,
+        refunded: 0,
+        disputed: 0,
+        uncaptured: 0,
+      });
+
+      // Cache for 5 minutes
+      this.cache.set(cacheKey, summary, 300000);
+      
+      return summary;
+    } catch (error) {
+      console.error('Error fetching summary:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all accounts efficiently with caching
+   */
+  async getAccountsFast() {
+    this.ensureStripe();
+    
+    const cacheKey = 'accounts_list';
+    const cached = this.cache.get(cacheKey);
+    if (cached) {
+      console.log('Cache hit for accounts');
+      return cached;
+    }
+
+    try {
+      const accounts = await this.stripe!.accounts.list({ limit: 100 });
+      
+      const result = {
+        accounts: accounts.data.map(acc => ({
+          id: acc.id,
+          email: acc.email,
+          country: acc.country,
+          type: acc.type,
+          business_type: acc.business_type,
+          charges_enabled: acc.charges_enabled,
+          payouts_enabled: acc.payouts_enabled,
+        })),
+        total: accounts.data.length
+      };
+
+      // Cache for 10 minutes (accounts don't change often)
+      this.cache.set(cacheKey, result, 600000);
+      
+      return result;
+    } catch (error) {
+      console.error('Error fetching accounts:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get transactions from platform account only - optimized version
+   * Uses ONLY: /v1/payment_intents endpoint
+   */
+  async getAllTransactionsFast(params: {
+    limit?: number;
+    page?: number;
+    status?: string;
+  }) {
+    this.ensureStripe();
+    
+    const limit = Math.min(params?.limit || 50, 100);
+    const page = params?.page || 1;
+    
+    // Disable caching for transactions to ensure fresh data
+    // const cacheKey = `all_transactions_${limit}_${page}`;
+    // const cached = this.cache.get(cacheKey);
+    // if (cached) {
+    //   console.log(`Cache hit for all transactions: ${limit}_${page}`);
+    //   return cached;
+    // }
+
+    try {
+      // Get platform account transactions only
+      // API Endpoint: /v1/payment_intents
+      console.log(`Fetching fresh transactions from /v1/payment_intents (limit: ${limit})...`);
+      const platformPayments = await this.stripe!.paymentIntents.list({
+        limit: 100, // Fetch all to get accurate count
+        expand: ['data.customer', 'data.latest_charge.refunds'],
+      });
+
+      console.log(`Stripe returned ${platformPayments.data.length} payment intents, has_more: ${platformPayments.has_more}`);
+
+      const platformTransactions = platformPayments.data.map((payment) => {
+        // Check if payment has refunds by checking the latest charge
+        let isRefunded = false;
+        let refundedAmount = 0;
+        
+        // Access latest_charge through the payment object (may be expanded)
+        const paymentAny = payment as any;
+        const latestCharge = paymentAny.latest_charge;
+        
+        if (latestCharge) {
+          // If latest_charge is expanded, it's an object; otherwise it's a string ID
+          if (typeof latestCharge === 'object' && latestCharge !== null) {
+            // Charge is expanded, check for refunds
+            if (latestCharge.refunded) {
+              isRefunded = true;
+              refundedAmount += latestCharge.amount_refunded || 0;
+            } else if (latestCharge.refunds && latestCharge.refunds.data && latestCharge.refunds.data.length > 0) {
+              isRefunded = true;
+              refundedAmount += latestCharge.refunds.data.reduce((sum: number, refund: any) => sum + (refund.amount || 0), 0);
+            }
+          } else if (typeof latestCharge === 'string') {
+            // Charge is not expanded, fetch it to check for refunds
+            // For now, we'll skip this to avoid extra API calls
+            // In production, you might want to batch fetch charges
+          }
+        }
+
+        return {
+          id: payment.id,
+          amount: payment.amount,
+          currency: payment.currency,
+          status: payment.status,
+          description: payment.description,
+          customer: payment.customer ? {
+            id: String(payment.customer),
+            email: payment.receipt_email,
+          } : undefined,
+          created: payment.created,
+          metadata: payment.metadata,
+          stripe_account: 'platform',
+          is_refunded: isRefunded,
+          refunded_amount: refundedAmount,
+        };
+      });
+
+      // Remove duplicates by ID
+      const uniqueTransactions = platformTransactions.filter((transaction, index, self) =>
+        index === self.findIndex((t) => t.id === transaction.id)
+      );
+
+      console.log(`After deduplication: ${uniqueTransactions.length} unique transactions (was ${platformTransactions.length})`);
+
+      // Sort by creation date (newest first)
+      uniqueTransactions.sort((a, b) => b.created - a.created);
+
+      // Apply status filter if provided
+      let filteredTransactions = uniqueTransactions;
+      if (params?.status && params.status !== 'all') {
+        filteredTransactions = uniqueTransactions.filter((transaction: any) => {
+          const status = transaction.status as string;
+          switch (params.status) {
+            case 'succeeded':
+              return status === 'succeeded' && !transaction.is_refunded;
+            case 'refunded':
+              return transaction.is_refunded === true;
+            case 'failed':
+              return status === 'failed' || status === 'canceled';
+            case 'disputed':
+              return status === 'canceled' && !transaction.is_refunded;
+            case 'uncaptured':
+              return status !== 'succeeded' && 
+                     status !== 'processing' && 
+                     status !== 'requires_payment_method' && 
+                     status !== 'requires_confirmation' && 
+                     status !== 'requires_action' && 
+                     status !== 'failed' && 
+                     status !== 'canceled' &&
+                     !transaction.is_refunded;
+            default:
+              return true;
+          }
+        });
+        console.log(`Filtered by status '${params.status}': ${filteredTransactions.length} transactions (from ${uniqueTransactions.length} total)`);
+      }
+
+      // Apply pagination on the backend side
+      const startIndex = (page - 1) * limit;
+      const endIndex = startIndex + limit;
+      const paginatedTransactions = filteredTransactions.slice(startIndex, endIndex);
+
+      console.log(`Page ${page}: Showing transactions ${startIndex + 1} to ${Math.min(endIndex, filteredTransactions.length)} of ${filteredTransactions.length} total (filtered from ${uniqueTransactions.length} unique)`);
+
+      // Calculate summary from ALL transactions (not just current page)
+      // Match Stripe dashboard: All, Succeeded, Refunded, Disputed, Failed, Uncaptured
+      const summary = uniqueTransactions.reduce((acc, transaction: any) => {
+        acc.total++;
+        const status = transaction.status as string;
+        
+        // Check if refunded first (refunded transactions can have succeeded status)
+        if (transaction.is_refunded) {
+          acc.refunded++;
+        } else if (status === 'succeeded') {
+          acc.succeeded++;
+        } else if (status === 'failed' || status === 'canceled') {
+          // Only count as failed if not refunded
+          if (status === 'failed') {
+            acc.failed++;
+          } else if (status === 'canceled') {
+            acc.disputed++;
+          }
+        } else if (status === 'processing' || 
+                   status === 'requires_payment_method' || 
+                   status === 'requires_confirmation' || 
+                   status === 'requires_action') {
+          // These are considered uncaptured
+          acc.uncaptured++;
+        } else {
+          acc.uncaptured++;
+        }
+        return acc;
+      }, {
+        total: 0,
+        succeeded: 0,
+        refunded: 0,
+        disputed: 0,
+        failed: 0,
+        uncaptured: 0,
+      });
+
+      const result = {
+        transactions: {
+          data: paginatedTransactions,
+          has_more: endIndex < filteredTransactions.length,
+          total_count: filteredTransactions.length,
+        },
+        summary
+      };
+
+      // Cache disabled for transactions to ensure accurate data
+      // this.cache.set(cacheKey, result, 120000);
+      
+      console.log(`Total transactions: ${uniqueTransactions.length} unique, ${filteredTransactions.length} after filter, returning ${paginatedTransactions.length} for page ${page}`);
+      return result;
+    } catch (error) {
+      console.error('Error fetching all transactions:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get payouts from platform account only - optimized version
+   * Uses ONLY: /v1/payouts endpoint
+   */
+  async getAllPayoutsFast(params: {
+    limit?: number;
+    page?: number;
+    status?: string;
+  }) {
+    this.ensureStripe();
+    
+    const limit = Math.min(params?.limit || 50, 100);
+    const page = params?.page || 1;
+    
+    // Disable caching for payouts to ensure fresh data
+    // Cache was causing issues with stale data showing duplicate payouts
+    // const cacheKey = `all_payouts_${limit}_${page}`;
+    // const cached = this.cache.get(cacheKey);
+    // if (cached) {
+    //   console.log(`Cache hit for all payouts: ${limit}_${page}`);
+    //   return cached;
+    // }
+    
+    console.log(`Fetching fresh payouts data (cache disabled for accuracy)...`);
+
+    try {
+      // Get platform account payouts only
+      // API Endpoint: /v1/payouts
+      // Note: Stripe uses cursor-based pagination, not page numbers
+      // For simplicity, we'll fetch all payouts and let the frontend handle pagination
+      // OR we can implement proper cursor-based pagination
+      console.log(`Fetching platform payouts from /v1/payouts (limit: ${limit})...`);
+      
+      const platformPayouts = await this.stripe!.payouts.list({
+        limit: 100, // Fetch more to get accurate count, but we'll limit the response
+      });
+
+      // Log what Stripe actually returned
+      console.log(`Stripe returned ${platformPayouts.data.length} payouts, has_more: ${platformPayouts.has_more}`);
+
+      const platformPayoutTransactions = platformPayouts.data.map((payout) => ({
+        id: payout.id,
+        amount: payout.amount,
+        currency: payout.currency,
+        status: payout.status,
+        arrival_date: payout.arrival_date,
+        created: payout.created,
+        description: payout.description,
+        destination: payout.destination,
+        failure_code: payout.failure_code,
+        failure_message: payout.failure_message,
+        method: payout.method,
+        source_type: payout.source_type,
+        statement_descriptor: payout.statement_descriptor,
+        type: payout.type,
+        metadata: payout.metadata,
+        stripe_account: 'platform',
+      }));
+
+      // Remove duplicates by ID (in case of any issues)
+      const uniquePayouts = platformPayoutTransactions.filter((payout, index, self) =>
+        index === self.findIndex((p) => p.id === payout.id)
+      );
+
+      console.log(`After deduplication: ${uniquePayouts.length} unique payouts (was ${platformPayoutTransactions.length})`);
+
+      // Sort by creation date (newest first)
+      uniquePayouts.sort((a, b) => b.created - a.created);
+
+      // Apply status filter if provided
+      let filteredPayouts = uniquePayouts;
+      if (params?.status && params.status !== 'all') {
+        filteredPayouts = uniquePayouts.filter((payout) => {
+          switch (params.status) {
+            case 'paid':
+              return payout.status === 'paid';
+            case 'pending':
+              return payout.status === 'pending';
+            case 'in_transit':
+              return payout.status === 'in_transit';
+            case 'failed':
+              return payout.status === 'failed';
+            case 'canceled':
+              return payout.status === 'canceled';
+            default:
+              return true;
+          }
+        });
+        console.log(`Filtered by status '${params.status}': ${filteredPayouts.length} payouts (from ${uniquePayouts.length} total)`);
+      }
+
+      // Apply pagination on the backend side
+      const startIndex = (page - 1) * limit;
+      const endIndex = startIndex + limit;
+      const paginatedPayouts = filteredPayouts.slice(startIndex, endIndex);
+
+      console.log(`Page ${page}: Showing payouts ${startIndex + 1} to ${Math.min(endIndex, filteredPayouts.length)} of ${filteredPayouts.length} total (filtered from ${uniquePayouts.length} unique)`);
+
+      // Calculate summary from ALL payouts (not just current page)
+      const summary = uniquePayouts.reduce((acc, payout) => {
+        acc.total++;
+        switch (payout.status) {
+          case 'paid':
+            acc.paid++;
+            break;
+          case 'pending':
+            acc.pending++;
+            break;
+          case 'in_transit':
+            acc.in_transit++;
+            break;
+          case 'canceled':
+            acc.canceled++;
+            break;
+          case 'failed':
+            acc.failed++;
+            break;
+          default:
+            acc.pending++;
+        }
+        return acc;
+      }, {
+        total: 0,
+        paid: 0,
+        pending: 0,
+        in_transit: 0,
+        canceled: 0,
+        failed: 0,
+      });
+
+      const result = {
+        payouts: {
+          data: paginatedPayouts,
+          has_more: endIndex < filteredPayouts.length,
+          total_count: filteredPayouts.length,
+        },
+        summary
+      };
+
+      // Cache disabled for payouts to ensure accurate data
+      // this.cache.set(cacheKey, result, 300000);
+      
+      console.log(`Total payouts: ${uniquePayouts.length} unique, ${filteredPayouts.length} after filter, returning ${paginatedPayouts.length} for page ${page}`);
+      return result;
+    } catch (error) {
+      console.error('Error fetching all payouts:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Clear cache for specific keys or all
+   */
+  clearCache(pattern?: string) {
+    if (pattern) {
+      // Clear specific cache entries matching pattern
+      for (const key of this.cache['cache'].keys()) {
+        if (key.includes(pattern)) {
+          this.cache.delete(key);
+        }
+      }
+    } else {
+      // Clear all cache
+      this.cache.clear();
+    }
+  }
+
   async listTransactions(params: {
     limit?: number;
     starting_after?: string;
@@ -25,109 +673,58 @@ export class StripeService {
     customer?: string;
   }) {
     this.ensureStripe();
+    
+    // Use caching for better performance
+    const cacheKey = `list_transactions_${params?.limit || 200}_${params?.starting_after || 'none'}_${params?.ending_before || 'none'}`;
+    const cached = this.cache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+    
+    // Reduced expansions for better performance
     const payments = await this.stripe!.paymentIntents.list({
-      limit: params?.limit ?? 200,
+      limit: Math.min(params?.limit ?? 100, 100), // Cap at 100 for performance
       starting_after: params?.starting_after,
       ending_before: params?.ending_before,
       // Remove customer filtering to show all transactions from all accounts
       // customer: params?.customer,
       expand: [
-        'data.payment_method',
-        'data.latest_charge',
-        'data.latest_charge.outcome',
-        'data.latest_charge.refunds',
-        'data.latest_charge.balance_transaction',
-        'data.latest_charge.transfer_data',
-        'data.customer'
+        'data.customer' // Only essential expansion
       ],
     });
 
-    const transactions = payments.data.map((payment) => {
-      const latestCharge = (payment as any).latest_charge;
-      const outcome = latestCharge?.outcome;
-      const refunds = latestCharge?.refunds?.data || [];
-      const balanceTransaction = latestCharge?.balance_transaction;
-      const transferData = latestCharge?.transfer_data;
-      
-      return {
-        id: payment.id,
-        amount: payment.amount,
-        currency: payment.currency,
-        status: payment.status,
-        description: payment.description ?? undefined,
-        customer: payment.customer
-          ? {
-              id: String(payment.customer),
-              email: payment.receipt_email ?? undefined,
-            }
-          : undefined,
-        // Enhanced payment method with more details
-        payment_method: (payment as any).payment_method
-          ? {
-              type: (payment as any).payment_method.type,
-              card: (payment as any).payment_method.card
-                ? {
-                    brand: (payment as any).payment_method.card.brand,
-                    last4: (payment as any).payment_method.card.last4,
-                    exp_month: (payment as any).payment_method.card.exp_month,
-                    exp_year: (payment as any).payment_method.card.exp_year,
-                    funding: (payment as any).payment_method.card.funding,
-                  }
-                : undefined,
-            }
-          : undefined,
-        created: payment.created,
-        metadata: payment.metadata as Record<string, string>,
-        fee: (payment as any).application_fee_amount,
-        net: payment.amount - ((payment as any).application_fee_amount || 0),
-        amount_received: payment.amount_received,
-        amount_capturable: payment.amount_capturable,
-        capture_method: payment.capture_method,
-        confirmation_method: payment.confirmation_method,
-        payment_method_types: payment.payment_method_types,
-        
-        // NEW FIELDS based on ChatGPT recommendations
-        // Decline reason and failure details
-        decline_reason: outcome?.reason || outcome?.failure_code || undefined,
-        failure_message: outcome?.failure_message || undefined,
-        risk_level: outcome?.risk_level || undefined,
-        
-        // Refund information
-        refunded_amount: refunds.reduce((sum: number, refund: any) => sum + refund.amount, 0),
-        refunded_date: refunds.length > 0 ? refunds[0].created : undefined,
-        refund_count: refunds.length,
-        refunds: refunds.map((refund: any) => ({
-          id: refund.id,
-          amount: refund.amount,
-          created: refund.created,
-          reason: refund.reason,
-          status: refund.status,
-        })),
-        
-        // Settlement and transfer information
-        settlement_merchant: transferData?.destination || balanceTransaction?.destination || undefined,
-        transferred_to: transferData?.destination || undefined,
-        transfer_group: latestCharge?.transfer_group || undefined,
-        
-        // Terminal information (if available in metadata)
-        terminal_location: payment.metadata?.terminal_location || payment.metadata?.location_id || undefined,
-        terminal_reader: payment.metadata?.terminal_reader || payment.metadata?.reader_id || undefined,
-        
-        // Balance transaction details
-        balance_transaction_id: balanceTransaction?.id || undefined,
-        net_amount: balanceTransaction?.net || payment.amount - ((payment as any).application_fee_amount || 0),
-        fee_details: balanceTransaction?.fee_details || undefined,
-        
-        // Charge reference
-        charge_id: latestCharge?.id || undefined,
-      };
-    });
+    // Simplified transaction mapping for better performance
+    const transactions = payments.data.map((payment) => ({
+      id: payment.id,
+      amount: payment.amount,
+      currency: payment.currency,
+      status: payment.status,
+      description: payment.description,
+      customer: payment.customer ? {
+        id: String(payment.customer),
+        email: payment.receipt_email,
+      } : undefined,
+      created: payment.created,
+      metadata: payment.metadata as Record<string, string>,
+      fee: (payment as any).application_fee_amount,
+      net: payment.amount - ((payment as any).application_fee_amount || 0),
+      amount_received: payment.amount_received,
+      amount_capturable: payment.amount_capturable,
+      capture_method: payment.capture_method,
+      confirmation_method: payment.confirmation_method,
+      payment_method_types: payment.payment_method_types,
+    }));
 
-    return {
+    const result = {
       data: transactions,
       has_more: payments.has_more,
       total_count: transactions.length,
     };
+
+    // Cache for 2 minutes
+    this.cache.set(cacheKey, result, 120000);
+    
+    return result;
   }
 
   async getTransaction(id: string) {
@@ -488,235 +1085,8 @@ export class StripeService {
     const platformTransactions = [...platformPaymentTransactions, ...platformChargeTransactions];
     allTransactions = [...platformTransactions];
 
-    // Now get all Connect accounts and their transactions
-    try {
-      const accounts = await this.stripe!.accounts.list({ limit: 100 });
-      console.log(`Found ${accounts.data.length} connected accounts`);
-
-      for (const account of accounts.data) {
-        try {
-          console.log(`Fetching transactions for Connect account: ${account.id}`);
-          
-          // Fetch Payment Intents from Connect account with enhanced expansions
-          const connectPayments = await this.stripe!.paymentIntents.list({
-            limit: 100, // Stripe's maximum limit
-            expand: [
-              'data.payment_method',
-              'data.latest_charge',
-              'data.latest_charge.outcome',
-              'data.latest_charge.refunds',
-              'data.latest_charge.balance_transaction',
-              'data.latest_charge.transfer_data',
-              'data.customer'
-            ]
-          }, {
-            stripeAccount: account.id
-          });
-
-          // Also fetch Charges from Connect account
-          const connectCharges = await this.stripe!.charges.list({
-            limit: 100, // Stripe's maximum limit
-            expand: ['data.customer'] // Only expand customer, not payment_method for charges
-          }, {
-            stripeAccount: account.id
-          });
-
-          // Fetch additional pages for Connect account
-          let allConnectPayments = [...connectPayments.data];
-          let connectHasMore = connectPayments.has_more;
-          let connectStartingAfter = connectPayments.data[connectPayments.data.length - 1]?.id;
-
-          while (connectHasMore && allConnectPayments.length < 1000) { // Safety limit
-            try {
-              const nextConnectPage = await this.stripe!.paymentIntents.list({
-                limit: 100,
-                starting_after: connectStartingAfter,
-                expand: [
-                  'data.payment_method',
-                  'data.latest_charge',
-                  'data.latest_charge.outcome',
-                  'data.latest_charge.refunds',
-                  'data.latest_charge.balance_transaction',
-                  'data.latest_charge.transfer_data',
-                  'data.customer'
-                ]
-              }, {
-                stripeAccount: account.id
-              });
-              
-              allConnectPayments = [...allConnectPayments, ...nextConnectPage.data];
-              connectHasMore = nextConnectPage.has_more;
-              connectStartingAfter = nextConnectPage.data[nextConnectPage.data.length - 1]?.id;
-              
-              console.log(`Fetched additional ${nextConnectPage.data.length} transactions from Connect account ${account.id}. Total: ${allConnectPayments.length}`);
-            } catch (error) {
-              console.error(`Error fetching additional Connect transactions for ${account.id}:`, error);
-              break;
-            }
-          }
-
-          // Fetch additional pages for Connect Charges
-          let allConnectCharges = [...connectCharges.data];
-          let connectChargesHasMore = connectCharges.has_more;
-          let connectChargesStartingAfter = connectCharges.data[connectCharges.data.length - 1]?.id;
-
-          while (connectChargesHasMore && allConnectCharges.length < 1000) {
-            try {
-              const nextConnectChargesPage = await this.stripe!.charges.list({
-                limit: 100,
-                starting_after: connectChargesStartingAfter,
-                expand: ['data.customer'] // Only expand customer, not payment_method for charges
-              }, {
-                stripeAccount: account.id
-              });
-              
-              allConnectCharges = [...allConnectCharges, ...nextConnectChargesPage.data];
-              connectChargesHasMore = nextConnectChargesPage.has_more;
-              connectChargesStartingAfter = nextConnectChargesPage.data[nextConnectChargesPage.data.length - 1]?.id;
-              
-              console.log(`Fetched additional ${nextConnectChargesPage.data.length} charges from Connect account ${account.id}. Total: ${allConnectCharges.length}`);
-            } catch (error) {
-              console.error(`Error fetching additional Connect charges for ${account.id}:`, error);
-              break;
-            }
-          }
-
-          console.log(`Connect account ${account.id}: ${allConnectPayments.length} payment intents + ${allConnectCharges.length} charges (including pagination)`);
-
-          // Convert Payment Intents with enhanced fields
-          const connectPaymentTransactions = allConnectPayments.map((payment) => {
-            const latestCharge = (payment as any).latest_charge;
-            const outcome = latestCharge?.outcome;
-            const refunds = latestCharge?.refunds?.data || [];
-            const balanceTransaction = latestCharge?.balance_transaction;
-            const transferData = latestCharge?.transfer_data;
-            
-            return {
-              id: payment.id,
-              amount: payment.amount,
-              currency: payment.currency,
-              status: payment.status,
-              description: payment.description ?? undefined,
-              customer: payment.customer
-                ? {
-                    id: String(payment.customer),
-                    email: payment.receipt_email ?? undefined,
-                  }
-                : undefined,
-              // Enhanced payment method with more details
-              payment_method: (payment as any).payment_method
-                ? {
-                    type: (payment as any).payment_method.type,
-                    card: (payment as any).payment_method.card
-                      ? {
-                          brand: (payment as any).payment_method.card.brand,
-                          last4: (payment as any).payment_method.card.last4,
-                          exp_month: (payment as any).payment_method.card.exp_month,
-                          exp_year: (payment as any).payment_method.card.exp_year,
-                          funding: (payment as any).payment_method.card.funding,
-                        }
-                      : undefined,
-                  }
-                : undefined,
-              created: payment.created,
-              metadata: payment.metadata as Record<string, string>,
-              fee: (payment as any).application_fee_amount,
-              net: payment.amount - ((payment as any).application_fee_amount || 0),
-              amount_received: payment.amount_received,
-              amount_capturable: payment.amount_capturable,
-              capture_method: payment.capture_method,
-              confirmation_method: payment.confirmation_method,
-              payment_method_types: payment.payment_method_types,
-              stripe_account: account.id,
-              account_email: account.email,
-              
-              // NEW FIELDS based on ChatGPT recommendations
-              // Decline reason and failure details
-              decline_reason: outcome?.reason || outcome?.failure_code || undefined,
-              failure_message: outcome?.failure_message || undefined,
-              risk_level: outcome?.risk_level || undefined,
-              
-              // Refund information
-              refunded_amount: refunds.reduce((sum: number, refund: any) => sum + refund.amount, 0),
-              refunded_date: refunds.length > 0 ? refunds[0].created : undefined,
-              refund_count: refunds.length,
-              refunds: refunds.map((refund: any) => ({
-                id: refund.id,
-                amount: refund.amount,
-                created: refund.created,
-                reason: refund.reason,
-                status: refund.status,
-              })),
-              
-              // Settlement and transfer information
-              settlement_merchant: transferData?.destination || balanceTransaction?.destination || undefined,
-              transferred_to: transferData?.destination || undefined,
-              transfer_group: latestCharge?.transfer_group || undefined,
-              
-              // Terminal information (if available in metadata)
-              terminal_location: payment.metadata?.terminal_location || payment.metadata?.location_id || undefined,
-              terminal_reader: payment.metadata?.terminal_reader || payment.metadata?.reader_id || undefined,
-              
-              // Balance transaction details
-              balance_transaction_id: balanceTransaction?.id || undefined,
-              net_amount: balanceTransaction?.net || payment.amount - ((payment as any).application_fee_amount || 0),
-              fee_details: balanceTransaction?.fee_details || undefined,
-              
-              // Charge reference
-              charge_id: latestCharge?.id || undefined,
-            };
-          });
-
-          // Convert Charges
-          const connectChargeTransactions = allConnectCharges.map((charge) => ({
-            id: charge.id,
-            amount: charge.amount,
-            currency: charge.currency,
-            status: charge.status === 'succeeded' ? 'succeeded' : charge.status,
-            description: charge.description ?? charge.metadata?.description ?? undefined,
-            customer: charge.customer
-              ? {
-                  id: String(charge.customer),
-                  email: charge.receipt_email ?? charge.billing_details?.email ?? undefined,
-                }
-              : undefined,
-            payment_method: charge.payment_method_details
-              ? {
-                  type: charge.payment_method_details.type,
-                  card: charge.payment_method_details.card
-                    ? {
-                        brand: charge.payment_method_details.card.brand,
-                        last4: charge.payment_method_details.card.last4,
-                      }
-                    : undefined,
-                }
-              : undefined,
-            created: charge.created,
-            metadata: charge.metadata as Record<string, string>,
-            fee: charge.application_fee_amount,
-            net: charge.amount - (charge.application_fee_amount || 0),
-            amount_received: charge.amount, // Charges don't have amount_received, use amount
-            amount_capturable: 0, // Charges are already captured
-            capture_method: charge.captured ? 'automatic' : 'manual',
-            confirmation_method: 'automatic',
-            payment_method_types: [charge.payment_method_details?.type || 'card'],
-            stripe_account: account.id,
-            account_email: account.email,
-            charge_id: charge.id, // Add charge ID for reference
-          }));
-
-          // Combine payment intents and charges for this Connect account
-          const connectTransactions = [...connectPaymentTransactions, ...connectChargeTransactions];
-          allTransactions = [...allTransactions, ...connectTransactions];
-        } catch (accountError) {
-          console.error(`Error fetching transactions for account ${account.id}:`, accountError.message);
-          // Continue with other accounts even if one fails
-        }
-      }
-    } catch (connectError) {
-      console.log('No Connect accounts found or error fetching Connect accounts:', connectError.message);
-      // Continue with just platform transactions
-    }
+    // Only fetch platform account transactions (no connected accounts)
+    // Removed connected accounts logic - only showing platform data
 
     // Remove duplicates - prioritize Payment Intents over Charges when both exist for the same transaction
     const deduplicatedTransactions = [];
@@ -808,8 +1178,16 @@ export class StripeService {
     ending_before?: string;
   }) {
     this.ensureStripe();
+    
+    // Use caching for better performance
+    const cacheKey = `list_payouts_${params?.limit || 200}_${params?.starting_after || 'none'}_${params?.ending_before || 'none'}`;
+    const cached = this.cache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+    
     const payouts = await this.stripe!.payouts.list({
-      limit: params?.limit ?? 200,
+      limit: Math.min(params?.limit ?? 100, 100), // Cap at 100 for performance
       starting_after: params?.starting_after,
       ending_before: params?.ending_before,
     });
@@ -833,11 +1211,16 @@ export class StripeService {
       stripe_account: 'platform',
     }));
 
-    return {
+    const result = {
       data: formattedPayouts,
       has_more: payouts.has_more,
       total_count: formattedPayouts.length,
     };
+
+    // Cache for 5 minutes (payouts change less frequently)
+    this.cache.set(cacheKey, result, 300000);
+    
+    return result;
   }
 
   async getPayout(id: string) {
@@ -930,85 +1313,13 @@ export class StripeService {
 
     allPayouts = [...platformPayoutTransactions];
 
-    // Now get all Connect accounts and their payouts
-    try {
-      const accounts = await this.stripe!.accounts.list({ limit: 100 });
-      console.log(`Found ${accounts.data.length} connected accounts`);
-
-      for (const account of accounts.data) {
-        try {
-          console.log(`Fetching payouts for Connect account: ${account.id}`);
-          
-          // Fetch Payouts from Connect account
-          const connectPayouts = await this.stripe!.payouts.list({
-            limit: 100, // Stripe's maximum limit
-          }, {
-            stripeAccount: account.id
-          });
-
-          // Fetch additional pages for Connect account
-          let allConnectPayouts = [...connectPayouts.data];
-          let connectHasMore = connectPayouts.has_more;
-          let connectStartingAfter = connectPayouts.data[connectPayouts.data.length - 1]?.id;
-
-          while (connectHasMore && allConnectPayouts.length < 1000) { // Safety limit
-            try {
-              const nextConnectPage = await this.stripe!.payouts.list({
-                limit: 100,
-                starting_after: connectStartingAfter,
-              }, {
-                stripeAccount: account.id
-              });
-              
-              allConnectPayouts = [...allConnectPayouts, ...nextConnectPage.data];
-              connectHasMore = nextConnectPage.has_more;
-              connectStartingAfter = nextConnectPage.data[nextConnectPage.data.length - 1]?.id;
-              
-              console.log(`Fetched additional ${nextConnectPage.data.length} payouts from Connect account ${account.id}. Total: ${allConnectPayouts.length}`);
-            } catch (error) {
-              console.error(`Error fetching additional Connect payouts for ${account.id}:`, error);
-              break;
-            }
-          }
-
-          console.log(`Connect account ${account.id}: ${allConnectPayouts.length} payouts (including pagination)`);
-
-          // Convert Connect Payouts
-          const connectPayoutTransactions = allConnectPayouts.map((payout) => ({
-            id: payout.id,
-            amount: payout.amount,
-            currency: payout.currency,
-            status: payout.status,
-            arrival_date: payout.arrival_date,
-            created: payout.created,
-            description: payout.description,
-            destination: payout.destination,
-            failure_code: payout.failure_code,
-            failure_message: payout.failure_message,
-            method: payout.method,
-            source_type: payout.source_type,
-            statement_descriptor: payout.statement_descriptor,
-            type: payout.type,
-            metadata: payout.metadata as Record<string, string>,
-            stripe_account: account.id,
-            account_email: account.email,
-          }));
-
-          allPayouts = [...allPayouts, ...connectPayoutTransactions];
-        } catch (accountError) {
-          console.error(`Error fetching payouts for account ${account.id}:`, accountError.message);
-          // Continue with other accounts even if one fails
-        }
-      }
-    } catch (connectError) {
-      console.log('No Connect accounts found or error fetching Connect accounts:', connectError.message);
-      // Continue with just platform payouts
-    }
+    // Only fetch platform account payouts (no connected accounts)
+    // Removed connected accounts logic - only showing platform data
 
     // Sort by creation date
     allPayouts.sort((a, b) => b.created - a.created);
 
-    console.log(`Total payouts from all accounts: ${allPayouts.length}`);
+    console.log(`Total payouts from platform account: ${allPayouts.length}`);
 
     // Calculate summary
     allSummary = allPayouts.reduce((acc, payout) => {
