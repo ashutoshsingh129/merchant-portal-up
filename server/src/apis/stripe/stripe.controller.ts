@@ -149,6 +149,17 @@ export class StripeController {
     return this.stripeService.getAccountsFast();
   }
 
+  @Get('all-customers-fast')
+  getAllCustomersFast(
+    @Query('limit') limit?: string,
+    @Query('page') page?: string,
+  ) {
+    return this.stripeService.getAllCustomersFast({
+      limit: limit ? parseInt(limit) : undefined,
+      page: page ? parseInt(page) : undefined,
+    });
+  }
+
   @Post('clear-cache')
   clearCache(@Body() body: { pattern?: string }) {
     this.stripeService.clearCache(body.pattern);

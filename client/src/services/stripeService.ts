@@ -91,6 +91,55 @@ export interface StripePayout {
     account_email?: string;
 }
 
+// Stripe Customer Types
+export interface StripeCustomer {
+    id: string;
+    object: string;
+    address?: {
+        city: string | null;
+        country: string | null;
+        line1: string | null;
+        line2: string | null;
+        postal_code: string | null;
+        state: string | null;
+    } | null;
+    balance: number;
+    created: number;
+    currency?: string | null;
+    default_source?: string | null;
+    delinquent: boolean;
+    description?: string | null;
+    discount?: any | null;
+    email?: string | null;
+    invoice_prefix?: string | null;
+    invoice_settings?: {
+        custom_fields?: any | null;
+        default_payment_method?: string | null;
+        footer?: string | null;
+        rendering_options?: any | null;
+    } | null;
+    livemode: boolean;
+    metadata: Record<string, string>;
+    name?: string | null;
+    next_invoice_sequence: number;
+    phone?: string | null;
+    preferred_locales: string[];
+    shipping?: {
+        address?: {
+            city: string | null;
+            country: string | null;
+            line1: string | null;
+            line2: string | null;
+            postal_code: string | null;
+            state: string | null;
+        } | null;
+        name?: string | null;
+        phone?: string | null;
+    } | null;
+    tax_exempt: string;
+    test_clock?: any | null;
+}
+
 export interface StripeTransactionListResponse {
     data: StripeTransaction[];
     has_more: boolean;
@@ -99,6 +148,12 @@ export interface StripeTransactionListResponse {
 
 export interface StripePayoutListResponse {
     data: StripePayout[];
+    has_more: boolean;
+    total_count?: number;
+}
+
+export interface StripeCustomerListResponse {
+    data: StripeCustomer[];
     has_more: boolean;
     total_count?: number;
 }
@@ -826,6 +881,63 @@ export class StripeService {
                     error instanceof Error
                         ? error.message
                         : 'Failed to fetch all payouts',
+                success: false,
+            };
+        }
+    }
+
+    // Get ALL customers from platform account - optimized
+    async getAllCustomersFast(params?: {
+        limit?: number;
+        page?: number;
+    }): Promise<
+        ApiResponse<{
+            customers: StripeCustomerListResponse;
+            summary: {
+                total: number;
+                delinquent: number;
+                with_email: number;
+                with_phone: number;
+                with_balance: number;
+            };
+        }>
+    > {
+        try {
+            const query = new URLSearchParams();
+            if (params?.limit) query.append('limit', String(params.limit));
+            if (params?.page) query.append('page', String(params.page));
+
+            const res = await fetch(
+                `${this.baseUrl}/stripe/all-customers-fast?${query.toString()}`
+            );
+            if (!res.ok) throw new Error('Failed to fetch all customers');
+            const body = await res.json();
+
+            return {
+                data: {
+                    customers: body.customers,
+                    summary: body.summary,
+                },
+                message: 'All customers fetched successfully',
+                success: true,
+            };
+        } catch (error) {
+            console.error('Error fetching all customers:', error);
+            return {
+                data: {
+                    customers: { data: [], has_more: false },
+                    summary: {
+                        total: 0,
+                        delinquent: 0,
+                        with_email: 0,
+                        with_phone: 0,
+                        with_balance: 0,
+                    },
+                },
+                message:
+                    error instanceof Error
+                        ? error.message
+                        : 'Failed to fetch all customers',
                 success: false,
             };
         }

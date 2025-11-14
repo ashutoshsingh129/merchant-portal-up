@@ -266,6 +266,24 @@ const Sidebar: React.FC<SidebarProps> = ({ open, onToggle }) => {
                         </Collapse>
                     </React.Fragment>
                 ))}
+
+                {/* Customers Item - Not part of Transactions submenu */}
+                <ListItem disablePadding>
+                    <StyledListItemButton
+                        selected={selectedItem === '/customers'}
+                        onClick={() =>
+                            handleItemClick('customers', '/customers')
+                        }
+                        sx={{ pl: 2 }}
+                    >
+                        <StyledListItemIcon>
+                            <People />
+                        </StyledListItemIcon>
+                        <Collapse in={open} timeout="auto" unmountOnExit>
+                            <StyledListItemText primary="Customers" />
+                        </Collapse>
+                    </StyledListItemButton>
+                </ListItem>
             </List>
         </StyledDrawer>
     );

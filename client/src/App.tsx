@@ -10,6 +10,7 @@ import Layout from './components/Layout/Layout';
 import Dashboard from './components/Dashboard/Dashboard';
 import Payments from './components/Payments';
 import Payouts from './components/Payouts';
+import Customers from './components/Customers';
 
 const AppRoutes: React.FC = () => {
     const theme = useAppSelector(state => state.app.theme);
@@ -29,6 +30,7 @@ const AppRoutes: React.FC = () => {
                             element={<Payouts />}
                         />
                         <Route path="/payouts" element={<Payouts />} />
+                        <Route path="/customers" element={<Customers />} />
                     </Routes>
                 </Layout>
             </Router>
