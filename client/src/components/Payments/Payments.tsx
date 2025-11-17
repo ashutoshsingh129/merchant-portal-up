@@ -176,6 +176,33 @@ const Payments: React.FC = () => {
     const [paymentMethodFilterInput, setPaymentMethodFilterInput] =
         useState<string>('');
 
+    // More filters states
+    const [moreFiltersAnchor, setMoreFiltersAnchor] =
+        useState<HTMLButtonElement | null>(null);
+
+    const [customerIdFilter, setCustomerIdFilter] = useState<string | null>(
+        null
+    );
+    const [customerIdFilterAnchor, setCustomerIdFilterAnchor] =
+        useState<HTMLButtonElement | null>(null);
+    const [customerIdFilterInput, setCustomerIdFilterInput] =
+        useState<string>('');
+
+    const [emailFilter, setEmailFilter] = useState<string | null>(null);
+    const [emailFilterAnchor, setEmailFilterAnchor] =
+        useState<HTMLButtonElement | null>(null);
+    const [emailFilterInput, setEmailFilterInput] = useState<string>('');
+
+    const [disputeAmountFilter, setDisputeAmountFilter] = useState<
+        number | null
+    >(null);
+    const [disputeAmountOperator, setDisputeAmountOperator] =
+        useState<string>('eq');
+    const [disputeAmountFilterAnchor, setDisputeAmountFilterAnchor] =
+        useState<HTMLButtonElement | null>(null);
+    const [disputeAmountFilterInput, setDisputeAmountFilterInput] =
+        useState<string>('0');
+
     const fetchData = useCallback(async () => {
         try {
             setLoading(true);
@@ -195,13 +222,75 @@ const Payments: React.FC = () => {
             });
 
             if (response.success) {
+                // Apply client-side filters for customer ID, email, and dispute amount
+                let filteredTransactions = response.data.transactions.data;
+
+                // Apply customer ID filter
+                if (customerIdFilter) {
+                    filteredTransactions = filteredTransactions.filter(
+                        (transaction: StripeTransaction) =>
+                            transaction.customer?.id
+                                ?.toLowerCase()
+                                .includes(customerIdFilter.toLowerCase())
+                    );
+                }
+
+                // Apply email filter
+                if (emailFilter) {
+                    filteredTransactions = filteredTransactions.filter(
+                        (transaction: StripeTransaction) =>
+                            transaction.customer?.email
+                                ?.toLowerCase()
+                                .includes(emailFilter.toLowerCase())
+                    );
+                }
+
+                // Apply dispute amount filter
+                // Note: dispute_amount may not be available on all transactions
+                // This filter will only match transactions that have dispute information
+                if (disputeAmountFilter !== null) {
+                    const disputeAmountInCents = Math.round(
+                        disputeAmountFilter * 100
+                    );
+                    filteredTransactions = filteredTransactions.filter(
+                        (transaction: StripeTransaction) => {
+                            // Check if transaction has dispute amount (may need to be added to type)
+                            const disputeAmount =
+                                (transaction as any).dispute_amount || 0;
+                            if (disputeAmount === 0) return false; // No dispute, doesn't match
+                            switch (disputeAmountOperator) {
+                                case 'eq':
+                                    return (
+                                        disputeAmount === disputeAmountInCents
+                                    );
+                                case 'gt':
+                                    return disputeAmount > disputeAmountInCents;
+                                case 'lt':
+                                    return disputeAmount < disputeAmountInCents;
+                                case 'gte':
+                                    return (
+                                        disputeAmount >= disputeAmountInCents
+                                    );
+                                case 'lte':
+                                    return (
+                                        disputeAmount <= disputeAmountInCents
+                                    );
+                                default:
+                                    return (
+                                        disputeAmount === disputeAmountInCents
+                                    );
+                            }
+                        }
+                    );
+                }
+
                 // Always replace data to avoid duplicates
                 // Backend handles pagination, so we just show what it returns
-                setTransactions(response.data.transactions.data);
+                setTransactions(filteredTransactions);
                 setHasMore(response.data.transactions.has_more);
                 setSummary(response.data.summary);
                 console.log(
-                    `Payments: Received ${response.data.transactions.data.length} transactions, total: ${response.data.transactions.total_count}, has_more: ${response.data.transactions.has_more}`
+                    `Payments: Received ${response.data.transactions.data.length} transactions, filtered to ${filteredTransactions.length}, total: ${response.data.transactions.total_count}, has_more: ${response.data.transactions.has_more}`
                 );
             } else {
                 setError(response.message);
@@ -219,6 +308,10 @@ const Payments: React.FC = () => {
         amountOperator,
         currencyFilter,
         paymentMethodFilter,
+        customerIdFilter,
+        emailFilter,
+        disputeAmountFilter,
+        disputeAmountOperator,
     ]);
 
     useEffect(() => {
@@ -401,6 +494,109 @@ const Payments: React.FC = () => {
         setTransactions([]);
     };
 
+    // More filters handlers
+    const handleMoreFiltersClick = (
+        event: React.MouseEvent<HTMLButtonElement>
+    ) => {
+        setMoreFiltersAnchor(event.currentTarget);
+    };
+
+    const handleMoreFiltersClose = () => {
+        setMoreFiltersAnchor(null);
+    };
+
+    // Customer ID filter handlers
+    const handleCustomerIdFilterOpen = () => {
+        // Store the anchor before closing more filters
+        const anchor = moreFiltersAnchor;
+        setMoreFiltersAnchor(null);
+        // Use a small delay to ensure the more filters popover closes first
+        setTimeout(() => {
+            setCustomerIdFilterAnchor(anchor);
+        }, 100);
+    };
+
+    const handleCustomerIdFilterClose = () => {
+        setCustomerIdFilterAnchor(null);
+    };
+
+    const handleCustomerIdFilterApply = () => {
+        const customerId = customerIdFilterInput.trim();
+        setCustomerIdFilter(customerId === '' ? null : customerId);
+        setCurrentPage(1);
+        setTransactions([]);
+        handleCustomerIdFilterClose();
+    };
+
+    const handleCustomerIdFilterClear = () => {
+        setCustomerIdFilter(null);
+        setCustomerIdFilterInput('');
+        setCurrentPage(1);
+        setTransactions([]);
+    };
+
+    // Email filter handlers
+    const handleEmailFilterOpen = () => {
+        // Store the anchor before closing more filters
+        const anchor = moreFiltersAnchor;
+        setMoreFiltersAnchor(null);
+        // Use a small delay to ensure the more filters popover closes first
+        setTimeout(() => {
+            setEmailFilterAnchor(anchor);
+        }, 100);
+    };
+
+    const handleEmailFilterClose = () => {
+        setEmailFilterAnchor(null);
+    };
+
+    const handleEmailFilterApply = () => {
+        const email = emailFilterInput.trim();
+        setEmailFilter(email === '' ? null : email);
+        setCurrentPage(1);
+        setTransactions([]);
+        handleEmailFilterClose();
+    };
+
+    const handleEmailFilterClear = () => {
+        setEmailFilter(null);
+        setEmailFilterInput('');
+        setCurrentPage(1);
+        setTransactions([]);
+    };
+
+    // Dispute amount filter handlers
+    const handleDisputeAmountFilterOpen = () => {
+        // Store the anchor before closing more filters
+        const anchor = moreFiltersAnchor;
+        setMoreFiltersAnchor(null);
+        // Use a small delay to ensure the more filters popover closes first
+        setTimeout(() => {
+            setDisputeAmountFilterAnchor(anchor);
+        }, 100);
+    };
+
+    const handleDisputeAmountFilterClose = () => {
+        setDisputeAmountFilterAnchor(null);
+    };
+
+    const handleDisputeAmountFilterApply = () => {
+        const amount = parseFloat(disputeAmountFilterInput);
+        if (!isNaN(amount) && amount >= 0) {
+            setDisputeAmountFilter(amount);
+            setCurrentPage(1);
+            setTransactions([]);
+        }
+        handleDisputeAmountFilterClose();
+    };
+
+    const handleDisputeAmountFilterClear = () => {
+        setDisputeAmountFilter(null);
+        setDisputeAmountFilterInput('0');
+        setCurrentPage(1);
+        setTransactions([]);
+    };
+
     const getStatusIcon = (status: string) => {
         switch (status) {
             case 'succeeded':
@@ -503,6 +699,7 @@ const Payments: React.FC = () => {
                         minWidth: 300,
                         borderRadius: 2,
                         boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                        mt: 0.5, // Small gap below button
                     },
                 }}
             >
@@ -594,6 +791,7 @@ const Payments: React.FC = () => {
                         minWidth: 300,
                         borderRadius: 2,
                         boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                        mt: 0.5, // Small gap below button
                     },
                 }}
             >
@@ -667,6 +865,7 @@ const Payments: React.FC = () => {
                         minWidth: 300,
                         borderRadius: 2,
                         boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                        mt: 0.5, // Small gap below button
                     },
                 }}
             >
@@ -707,14 +906,17 @@ const Payments: React.FC = () => {
                     vertical: 'top',
                     horizontal: 'left',
                 }}
-                PaperProps={{
-                    sx: {
-                        p: 3,
-                        minWidth: 300,
-                        maxHeight: 400,
-                        borderRadius: 2,
-                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                        overflow: 'auto',
+                slotProps={{
+                    paper: {
+                        sx: {
+                            p: 3,
+                            minWidth: 300,
+                            maxHeight: 400,
+                            borderRadius: 2,
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                            overflow: 'auto',
+                            mt: 0.5, // Small gap below button
+                        },
                     },
                 }}
             >
@@ -791,6 +993,7 @@ const Payments: React.FC = () => {
                         minWidth: 300,
                         borderRadius: 2,
                         boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                        mt: 0.5, // Small gap below button
                     },
                 }}
             >
@@ -824,6 +1027,267 @@ const Payments: React.FC = () => {
                     variant="contained"
                     fullWidth
                     onClick={handlePaymentMethodFilterApply}
+                    sx={{
+                        backgroundColor: '#7c3aed',
+                        '&:hover': { backgroundColor: '#6d28d9' },
+                        textTransform: 'none',
+                        py: 1.5,
+                    }}
+                >
+                    Apply
+                </Button>
+            </Popover>
+
+            {/* More Filters Popover */}
+            <Popover
+                open={Boolean(moreFiltersAnchor)}
+                anchorEl={moreFiltersAnchor}
+                onClose={handleMoreFiltersClose}
+                anchorOrigin={{
+                    vertical: 'bottom',
+                    horizontal: 'left',
+                }}
+                transformOrigin={{
+                    vertical: 'top',
+                    horizontal: 'left',
+                }}
+                PaperProps={{
+                    sx: {
+                        p: 2,
+                        minWidth: 280,
+                        borderRadius: 2,
+                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                        mt: 0.5,
+                    },
+                }}
+            >
+                <Box
+                    sx={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 0.5,
+                    }}
+                >
+                    <Box
+                        onClick={handleCustomerIdFilterOpen}
+                        sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            p: 1.5,
+                            cursor: 'pointer',
+                            borderRadius: 1,
+                            '&:hover': {
+                                backgroundColor: '#f3f4f6',
+                            },
+                        }}
+                    >
+                        <Typography variant="body2">Customer ID</Typography>
+                        <Add sx={{ fontSize: 18, color: '#6b7280' }} />
+                    </Box>
+                    <Box
+                        onClick={handleEmailFilterOpen}
+                        sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            p: 1.5,
+                            cursor: 'pointer',
+                            borderRadius: 1,
+                            '&:hover': {
+                                backgroundColor: '#f3f4f6',
+                            },
+                        }}
+                    >
+                        <Typography variant="body2">Email</Typography>
+                        <Add sx={{ fontSize: 18, color: '#6b7280' }} />
+                    </Box>
+                    <Box
+                        onClick={handleDisputeAmountFilterOpen}
+                        sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            p: 1.5,
+                            cursor: 'pointer',
+                            borderRadius: 1,
+                            '&:hover': {
+                                backgroundColor: '#f3f4f6',
+                            },
+                        }}
+                    >
+                        <Typography variant="body2">Dispute amount</Typography>
+                        <Add sx={{ fontSize: 18, color: '#6b7280' }} />
+                    </Box>
+                </Box>
+            </Popover>
+
+            {/* Customer ID Filter Popover */}
+            <Popover
+                open={Boolean(customerIdFilterAnchor)}
+                anchorEl={customerIdFilterAnchor}
+                onClose={handleCustomerIdFilterClose}
+                anchorOrigin={{
+                    vertical: 'bottom',
+                    horizontal: 'left',
+                }}
+                transformOrigin={{
+                    vertical: 'top',
+                    horizontal: 'left',
+                }}
+                PaperProps={{
+                    sx: {
+                        p: 3,
+                        minWidth: 300,
+                        borderRadius: 2,
+                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                        mt: 0.5,
+                    },
+                }}
+            >
+                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                    Filter by: Customer ID
+                </Typography>
+                <Box sx={{ mb: 2 }}>
+                    <TextField
+                        value={customerIdFilterInput}
+                        onChange={e => setCustomerIdFilterInput(e.target.value)}
+                        placeholder="cus_..."
+                        fullWidth
+                    />
+                </Box>
+                <Button
+                    variant="contained"
+                    fullWidth
+                    onClick={handleCustomerIdFilterApply}
+                    sx={{
+                        backgroundColor: '#7c3aed',
+                        '&:hover': { backgroundColor: '#6d28d9' },
+                        textTransform: 'none',
+                        py: 1.5,
+                    }}
+                >
+                    Apply
+                </Button>
+            </Popover>
+
+            {/* Email Filter Popover */}
+            <Popover
+                open={Boolean(emailFilterAnchor)}
+                anchorEl={emailFilterAnchor}
+                onClose={handleEmailFilterClose}
+                anchorOrigin={{
+                    vertical: 'bottom',
+                    horizontal: 'left',
+                }}
+                transformOrigin={{
+                    vertical: 'top',
+                    horizontal: 'left',
+                }}
+                PaperProps={{
+                    sx: {
+                        p: 3,
+                        minWidth: 300,
+                        borderRadius: 2,
+                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                        mt: 0.5,
+                    },
+                }}
+            >
+                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                    Filter by: Email
+                </Typography>
+                <Box sx={{ mb: 2 }}>
+                    <TextField
+                        type="email"
+                        value={emailFilterInput}
+                        onChange={e => setEmailFilterInput(e.target.value)}
+                        placeholder="customer@example.com"
+                        fullWidth
+                    />
+                </Box>
+                <Button
+                    variant="contained"
+                    fullWidth
+                    onClick={handleEmailFilterApply}
+                    sx={{
+                        backgroundColor: '#7c3aed',
+                        '&:hover': { backgroundColor: '#6d28d9' },
+                        textTransform: 'none',
+                        py: 1.5,
+                    }}
+                >
+                    Apply
+                </Button>
+            </Popover>
+
+            {/* Dispute Amount Filter Popover */}
+            <Popover
+                open={Boolean(disputeAmountFilterAnchor)}
+                anchorEl={disputeAmountFilterAnchor}
+                onClose={handleDisputeAmountFilterClose}
+                anchorOrigin={{
+                    vertical: 'bottom',
+                    horizontal: 'left',
+                }}
+                transformOrigin={{
+                    vertical: 'top',
+                    horizontal: 'left',
+                }}
+                PaperProps={{
+                    sx: {
+                        p: 3,
+                        minWidth: 300,
+                        borderRadius: 2,
+                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                        mt: 0.5,
+                    },
+                }}
+            >
+                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                    Filter by: Dispute amount
+                </Typography>
+                <Box sx={{ mb: 2 }}>
+                    <FormControl fullWidth sx={{ mb: 2 }}>
+                        <Select
+                            value={disputeAmountOperator}
+                            onChange={e =>
+                                setDisputeAmountOperator(e.target.value)
+                            }
+                            displayEmpty
+                        >
+                            <MenuItem value="eq">is equal to</MenuItem>
+                            <MenuItem value="gt">is greater than</MenuItem>
+                            <MenuItem value="lt">is less than</MenuItem>
+                            <MenuItem value="gte">
+                                is greater than or equal to
+                            </MenuItem>
+                            <MenuItem value="lte">
+                                is less than or equal to
+                            </MenuItem>
+                        </Select>
+                    </FormControl>
+                    <TextField
+                        type="number"
+                        value={disputeAmountFilterInput}
+                        onChange={e =>
+                            setDisputeAmountFilterInput(e.target.value)
+                        }
+                        placeholder="0.00"
+                        fullWidth
+                        InputProps={{
+                            startAdornment: (
+                                <InputAdornment position="start">
+                                    $
+                                </InputAdornment>
+                            ),
+                        }}
+                    />
+                </Box>
+                <Button
+                    variant="contained"
+                    fullWidth
+                    onClick={handleDisputeAmountFilterApply}
                     sx={{
                         backgroundColor: '#7c3aed',
                         '&:hover': { backgroundColor: '#6d28d9' },
@@ -1061,6 +1525,61 @@ const Payments: React.FC = () => {
                     <Chip
                         label={paymentMethodFilter}
                         onDelete={handlePaymentMethodFilterClear}
+                        color="primary"
+                        sx={{ backgroundColor: '#7c3aed' }}
+                    />
+                )}
+
+                <Button
+                    variant={
+                        customerIdFilter ||
+                        emailFilter ||
+                        disputeAmountFilter !== null
+                            ? 'contained'
+                            : 'outlined'
+                    }
+                    size="small"
+                    onClick={handleMoreFiltersClick}
+                    startIcon={<Add />}
+                    sx={{
+                        textTransform: 'none',
+                        borderRadius: 1,
+                        borderColor:
+                            customerIdFilter ||
+                            emailFilter ||
+                            disputeAmountFilter !== null
+                                ? '#7c3aed'
+                                : '#e2e8f0',
+                        ...((customerIdFilter ||
+                            emailFilter ||
+                            disputeAmountFilter !== null) && {
+                            backgroundColor: '#7c3aed',
+                            '&:hover': { backgroundColor: '#6d28d9' },
+                        }),
+                    }}
+                >
+                    More filters
+                </Button>
+                {customerIdFilter && (
+                    <Chip
+                        label={`Customer ID: ${customerIdFilter}`}
+                        onDelete={handleCustomerIdFilterClear}
+                        color="primary"
+                        sx={{ backgroundColor: '#7c3aed' }}
+                    />
+                )}
+                {emailFilter && (
+                    <Chip
+                        label={`Email: ${emailFilter}`}
+                        onDelete={handleEmailFilterClear}
+                        color="primary"
+                        sx={{ backgroundColor: '#7c3aed' }}
+                    />
+                )}
+                {disputeAmountFilter !== null && (
+                    <Chip
+                        label={`Dispute amount ${disputeAmountOperator === 'eq' ? '=' : disputeAmountOperator === 'gt' ? '>' : disputeAmountOperator === 'lt' ? '<' : disputeAmountOperator === 'gte' ? '>=' : '<='} $${disputeAmountFilter.toFixed(2)}`}
+                        onDelete={handleDisputeAmountFilterClear}
                         color="primary"
                         sx={{ backgroundColor: '#7c3aed' }}
                     />

@@ -17,8 +17,23 @@ import {
     Button,
     Tooltip,
     Chip,
+    Popover,
+    TextField,
+    IconButton,
+    InputAdornment,
+    MenuItem,
+    Select,
+    FormControl,
 } from '@mui/material';
-import { CheckCircle, Error, Refresh } from '@mui/icons-material';
+import {
+    CheckCircle,
+    Error,
+    Refresh,
+    Add,
+    KeyboardArrowUp,
+    KeyboardArrowDown,
+    ArrowDropDown,
+} from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
 import { stripeService, StripeCustomer } from '../../services/stripeService';
 
@@ -98,6 +113,7 @@ const StyledTable = styled(Table)(({ theme }) => ({
 
 const Customers: React.FC = () => {
     const [customers, setCustomers] = useState<StripeCustomer[]>([]);
+    const [allCustomers, setAllCustomers] = useState<StripeCustomer[]>([]); // Store all customers for filtering
     const [summary, setSummary] = useState({
         total: 0,
         delinquent: 0,
@@ -111,6 +127,25 @@ const Customers: React.FC = () => {
     const [currentPage, setCurrentPage] = useState(1);
     const [hasMore, setHasMore] = useState(false);
 
+    // Filter states
+    const [emailFilter, setEmailFilter] = useState<string | null>(null);
+    const [emailFilterAnchor, setEmailFilterAnchor] =
+        useState<HTMLButtonElement | null>(null);
+    const [emailFilterInput, setEmailFilterInput] = useState<string>('');
+
+    const [cardFilter, setCardFilter] = useState<string | null>(null);
+    const [cardFilterAnchor, setCardFilterAnchor] =
+        useState<HTMLButtonElement | null>(null);
+
+    const [dateFilterDays, setDateFilterDays] = useState<number | null>(null);
+    const [dateFilterAnchor, setDateFilterAnchor] =
+        useState<HTMLButtonElement | null>(null);
+    const [dateFilterInput, setDateFilterInput] = useState<string>('1');
+
+    const [typeFilter, setTypeFilter] = useState<string | null>(null);
+    const [typeFilterAnchor, setTypeFilterAnchor] =
+        useState<HTMLButtonElement | null>(null);
+
     const fetchData = useCallback(async () => {
         try {
             setLoading(true);
@@ -122,10 +157,15 @@ const Customers: React.FC = () => {
             });
 
             if (response.success) {
-                // Filter customers on the client side based on selectedSummary
+                // Store all customers for client-side filtering
+                setAllCustomers(response.data.customers.data);
+
+                // Apply all filters
                 let filtered = response.data.customers.data;
+
+                // Apply summary filter
                 if (selectedSummary !== 'all') {
-                    filtered = response.data.customers.data.filter(customer => {
+                    filtered = filtered.filter(customer => {
                         switch (selectedSummary) {
                             case 'delinquent':
                                 return customer.delinquent;
@@ -140,6 +180,47 @@ const Customers: React.FC = () => {
                         }
                     });
                 }
+
+                // Apply email filter
+                if (emailFilter) {
+                    filtered = filtered.filter(customer =>
+                        customer.email
+                            ?.toLowerCase()
+                            .includes(emailFilter.toLowerCase())
+                    );
+                }
+
+                // Apply card filter
+                if (cardFilter === 'has_card') {
+                    filtered = filtered.filter(
+                        customer =>
+                            customer.default_source ||
+                            customer.invoice_settings?.default_payment_method
+                    );
+                } else if (cardFilter === 'no_card') {
+                    filtered = filtered.filter(
+                        customer =>
+                            !customer.default_source &&
+                            !customer.invoice_settings?.default_payment_method
+                    );
+                }
+
+                // Apply date filter
+                if (dateFilterDays) {
+                    const cutoffDate =
+                        Date.now() / 1000 - dateFilterDays * 24 * 60 * 60;
+                    filtered = filtered.filter(
+                        customer => customer.created >= cutoffDate
+                    );
+                }
+
+                // Apply type filter
+                if (typeFilter === 'customer_account') {
+                    filtered = filtered.filter(customer => customer.email);
+                } else if (typeFilter === 'guest') {
+                    filtered = filtered.filter(customer => !customer.email);
+                }
+
                 setCustomers(filtered);
                 setHasMore(response.data.customers.has_more);
                 setSummary(response.data.summary);
@@ -154,7 +235,14 @@ const Customers: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    }, [currentPage, selectedSummary]);
+    }, [
+        currentPage,
+        selectedSummary,
+        emailFilter,
+        cardFilter,
+        dateFilterDays,
+        typeFilter,
+    ]);
 
     useEffect(() => {
         fetchData();
@@ -173,6 +261,120 @@ const Customers: React.FC = () => {
 
     const handleSummaryClick = (type: string) => {
         setSelectedSummary(type);
+        setCurrentPage(1);
+        setCustomers([]);
+    };
+
+    // Email filter handlers
+    const handleEmailFilterClick = (
+        event: React.MouseEvent<HTMLButtonElement>
+    ) => {
+        setEmailFilterAnchor(event.currentTarget);
+    };
+
+    const handleEmailFilterClose = () => {
+        setEmailFilterAnchor(null);
+    };
+
+    const handleEmailFilterApply = () => {
+        const email = emailFilterInput.trim();
+        setEmailFilter(email === '' ? null : email);
+        setCurrentPage(1);
+        setCustomers([]);
+        handleEmailFilterClose();
+    };
+
+    const handleEmailFilterClear = () => {
+        setEmailFilter(null);
+        setEmailFilterInput('');
+        setCurrentPage(1);
+        setCustomers([]);
+    };
+
+    // Card filter handlers
+    const handleCardFilterClick = (
+        event: React.MouseEvent<HTMLButtonElement>
+    ) => {
+        setCardFilterAnchor(event.currentTarget);
+    };
+
+    const handleCardFilterClose = () => {
+        setCardFilterAnchor(null);
+    };
+
+    const handleCardFilterApply = (value: string) => {
+        setCardFilter(value === 'all' ? null : value);
+        setCurrentPage(1);
+        setCustomers([]);
+        handleCardFilterClose();
+    };
+
+    const handleCardFilterClear = () => {
+        setCardFilter(null);
+        setCurrentPage(1);
+        setCustomers([]);
+    };
+
+    // Date filter handlers
+    const handleDateFilterClick = (
+        event: React.MouseEvent<HTMLButtonElement>
+    ) => {
+        setDateFilterAnchor(event.currentTarget);
+    };
+
+    const handleDateFilterClose = () => {
+        setDateFilterAnchor(null);
+    };
+
+    const handleDateFilterApply = () => {
+        const days = parseInt(dateFilterInput);
+        if (days > 0) {
+            setDateFilterDays(days);
+            setCurrentPage(1);
+            setCustomers([]);
+        }
+        handleDateFilterClose();
+    };
+
+    const handleDateFilterClear = () => {
+        setDateFilterDays(null);
+        setDateFilterInput('1');
+        setCurrentPage(1);
+        setCustomers([]);
+    };
+
+    const incrementDays = () => {
+        const current = parseInt(dateFilterInput) || 1;
+        setDateFilterInput(String(current + 1));
+    };
+
+    const decrementDays = () => {
+        const current = parseInt(dateFilterInput) || 1;
+        if (current > 1) {
+            setDateFilterInput(String(current - 1));
+        }
+    };
+
+    // Type filter handlers
+    const handleTypeFilterClick = (
+        event: React.MouseEvent<HTMLButtonElement>
+    ) => {
+        setTypeFilterAnchor(event.currentTarget);
+    };
+
+    const handleTypeFilterClose = () => {
+        setTypeFilterAnchor(null);
+    };
+
+    const handleTypeFilterApply = (value: string) => {
+        setTypeFilter(value === 'all' ? null : value);
+        setCurrentPage(1);
+        setCustomers([]);
+        handleTypeFilterClose();
+    };
+
+    const handleTypeFilterClear = () => {
+        setTypeFilter(null);
         setCurrentPage(1);
         setCustomers([]);
     };
@@ -250,6 +452,245 @@ const Customers: React.FC = () => {
                 </Alert>
             )}
 
+            {/* Email Filter Popover */}
+            <Popover
+                open={Boolean(emailFilterAnchor)}
+                anchorEl={emailFilterAnchor}
+                onClose={handleEmailFilterClose}
+                anchorOrigin={{
+                    vertical: 'bottom',
+                    horizontal: 'left',
+                }}
+                transformOrigin={{
+                    vertical: 'top',
+                    horizontal: 'left',
+                }}
+                PaperProps={{
+                    sx: {
+                        p: 3,
+                        minWidth: 300,
+                        borderRadius: 2,
+                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                        mt: 0.5, // Small gap below button
+                    },
+                }}
+            >
+                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                    Filter by: email
+                </Typography>
+                <Box sx={{ mb: 2 }}>
+                    <Typography
+                        variant="body2"
+                        sx={{ mb: 1, color: '#6b7280' }}
+                    >
+                        is equal to
+                    </Typography>
+                    <TextField
+                        value={emailFilterInput}
+                        onChange={e => setEmailFilterInput(e.target.value)}
+                        placeholder="email@example.com"
+                        fullWidth
+                    />
+                </Box>
+                <Button
+                    variant="contained"
+                    fullWidth
+                    onClick={handleEmailFilterApply}
+                    sx={{
+                        backgroundColor: '#7c3aed',
+                        '&:hover': { backgroundColor: '#6d28d9' },
+                        textTransform: 'none',
+                        py: 1.5,
+                    }}
+                >
+                    Apply
+                </Button>
+            </Popover>
+
+            {/* Card Filter Popover */}
+            <Popover
+                open={Boolean(cardFilterAnchor)}
+                anchorEl={cardFilterAnchor}
+                onClose={handleCardFilterClose}
+                anchorOrigin={{
+                    vertical: 'bottom',
+                    horizontal: 'left',
+                }}
+                transformOrigin={{
+                    vertical: 'top',
+                    horizontal: 'left',
+                }}
+                PaperProps={{
+                    sx: {
+                        p: 3,
+                        minWidth: 300,
+                        borderRadius: 2,
+                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                        mt: 0.5, // Small gap below button
+                    },
+                }}
+            >
+                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                    Filter by: card
+                </Typography>
+                <Box sx={{ mb: 2 }}>
+                    <FormControl fullWidth>
+                        <Select
+                            value={cardFilter || 'all'}
+                            onChange={e =>
+                                handleCardFilterApply(e.target.value)
+                            }
+                            displayEmpty
+                        >
+                            <MenuItem value="all">All</MenuItem>
+                            <MenuItem value="has_card">
+                                has an active card
+                            </MenuItem>
+                            <MenuItem value="no_card">
+                                does not have an active card
+                            </MenuItem>
+                        </Select>
+                    </FormControl>
+                </Box>
+            </Popover>
+
+            {/* Date Filter Popover */}
+            <Popover
+                open={Boolean(dateFilterAnchor)}
+                anchorEl={dateFilterAnchor}
+                onClose={handleDateFilterClose}
+                anchorOrigin={{
+                    vertical: 'bottom',
+                    horizontal: 'left',
+                }}
+                transformOrigin={{
+                    vertical: 'top',
+                    horizontal: 'left',
+                }}
+                PaperProps={{
+                    sx: {
+                        p: 3,
+                        minWidth: 300,
+                        borderRadius: 2,
+                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                        mt: 0.5, // Small gap below button
+                    },
+                }}
+            >
+                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                    Filter by: created date
+                </Typography>
+                <Box sx={{ mb: 2 }}>
+                    <Typography
+                        variant="body2"
+                        sx={{ mb: 1, color: '#6b7280' }}
+                    >
+                        is in the last
+                    </Typography>
+                    <TextField
+                        type="number"
+                        value={dateFilterInput}
+                        onChange={e => setDateFilterInput(e.target.value)}
+                        InputProps={{
+                            endAdornment: (
+                                <InputAdornment position="end">
+                                    <Box
+                                        sx={{
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                        }}
+                                    >
+                                        <IconButton
+                                            size="small"
+                                            onClick={incrementDays}
+                                            sx={{
+                                                height: 16,
+                                                width: 16,
+                                                mb: 0.5,
+                                            }}
+                                        >
+                                            <KeyboardArrowUp fontSize="small" />
+                                        </IconButton>
+                                        <IconButton
+                                            size="small"
+                                            onClick={decrementDays}
+                                            sx={{ height: 16, width: 16 }}
+                                        >
+                                            <KeyboardArrowDown fontSize="small" />
+                                        </IconButton>
+                                    </Box>
+                                </InputAdornment>
+                            ),
+                        }}
+                        sx={{ width: '100%' }}
+                    />
+                    <Typography
+                        variant="body2"
+                        sx={{ mt: 1, color: '#6b7280' }}
+                    >
+                        days
+                    </Typography>
+                </Box>
+                <Button
+                    variant="contained"
+                    fullWidth
+                    onClick={handleDateFilterApply}
+                    sx={{
+                        backgroundColor: '#7c3aed',
+                        '&:hover': { backgroundColor: '#6d28d9' },
+                        textTransform: 'none',
+                        py: 1.5,
+                    }}
+                >
+                    Apply
+                </Button>
+            </Popover>
+
+            {/* Type Filter Popover */}
+            <Popover
+                open={Boolean(typeFilterAnchor)}
+                anchorEl={typeFilterAnchor}
+                onClose={handleTypeFilterClose}
+                anchorOrigin={{
+                    vertical: 'bottom',
+                    horizontal: 'left',
+                }}
+                transformOrigin={{
+                    vertical: 'top',
+                    horizontal: 'left',
+                }}
+                PaperProps={{
+                    sx: {
+                        p: 3,
+                        minWidth: 300,
+                        borderRadius: 2,
+                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                        mt: 0.5, // Small gap below button
+                    },
+                }}
+            >
+                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                    Filter by: type
+                </Typography>
+                <Box sx={{ mb: 2 }}>
+                    <FormControl fullWidth>
+                        <Select
+                            value={typeFilter || 'all'}
+                            onChange={e =>
+                                handleTypeFilterApply(e.target.value)
+                            }
+                            displayEmpty
+                        >
+                            <MenuItem value="all">All</MenuItem>
+                            <MenuItem value="customer_account">
+                                Customer account
+                            </MenuItem>
+                            <MenuItem value="guest">Guest</MenuItem>
+                        </Select>
+                    </FormControl>
+                </Box>
+            </Popover>
+
             {/* Summary Cards */}
             <Grid container spacing={2} sx={{ mb: 3, px: 2 }}>
                 <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
@@ -323,6 +764,130 @@ const Customers: React.FC = () => {
                     </SummaryCard>
                 </Grid>
             </Grid>
+
+            {/* Filter Bar - Below Statistics Cards */}
+            <Box
+                sx={{
+                    px: 2,
+                    mb: 2,
+                    display: 'flex',
+                    gap: 1,
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                }}
+            >
+                <Button
+                    variant={emailFilter ? 'contained' : 'outlined'}
+                    size="small"
+                    onClick={handleEmailFilterClick}
+                    startIcon={<Add />}
+                    sx={{
+                        textTransform: 'none',
+                        borderRadius: 1,
+                        borderColor: emailFilter ? '#7c3aed' : '#e2e8f0',
+                        ...(emailFilter && {
+                            backgroundColor: '#7c3aed',
+                            '&:hover': { backgroundColor: '#6d28d9' },
+                        }),
+                    }}
+                >
+                    Email
+                </Button>
+                {emailFilter && (
+                    <Chip
+                        label={emailFilter}
+                        onDelete={handleEmailFilterClear}
+                        color="primary"
+                        sx={{ backgroundColor: '#7c3aed' }}
+                    />
+                )}
+
+                <Button
+                    variant={cardFilter ? 'contained' : 'outlined'}
+                    size="small"
+                    onClick={handleCardFilterClick}
+                    startIcon={<Add />}
+                    sx={{
+                        textTransform: 'none',
+                        borderRadius: 1,
+                        borderColor: cardFilter ? '#7c3aed' : '#e2e8f0',
+                        ...(cardFilter && {
+                            backgroundColor: '#7c3aed',
+                            '&:hover': { backgroundColor: '#6d28d9' },
+                        }),
+                    }}
+                >
+                    Card
+                </Button>
+                {cardFilter && (
+                    <Chip
+                        label={
+                            cardFilter === 'has_card'
+                                ? 'Has active card'
+                                : 'No active card'
+                        }
+                        onDelete={handleCardFilterClear}
+                        color="primary"
+                        sx={{ backgroundColor: '#7c3aed' }}
+                    />
+                )}
+
+                <Button
+                    variant={dateFilterDays ? 'contained' : 'outlined'}
+                    size="small"
+                    onClick={handleDateFilterClick}
+                    startIcon={<Add />}
+                    sx={{
+                        textTransform: 'none',
+                        borderRadius: 1,
+                        borderColor: dateFilterDays ? '#7c3aed' : '#e2e8f0',
+                        ...(dateFilterDays && {
+                            backgroundColor: '#7c3aed',
+                            '&:hover': { backgroundColor: '#6d28d9' },
+                        }),
+                    }}
+                >
+                    Created date
+                </Button>
+                {dateFilterDays && (
+                    <Chip
+                        label={`Last ${dateFilterDays} day${dateFilterDays !== 1 ? 's' : ''}`}
+                        onDelete={handleDateFilterClear}
+                        color="primary"
+                        sx={{ backgroundColor: '#7c3aed' }}
+                    />
+                )}
+
+                <Button
+                    variant={typeFilter ? 'contained' : 'outlined'}
+                    size="small"
+                    onClick={handleTypeFilterClick}
+                    startIcon={<Add />}
+                    sx={{
+                        textTransform: 'none',
+                        borderRadius: 1,
+                        borderColor: typeFilter ? '#7c3aed' : '#e2e8f0',
+                        ...(typeFilter && {
+                            backgroundColor: '#7c3aed',
+                            '&:hover': { backgroundColor: '#6d28d9' },
+                        }),
+                    }}
+                >
+                    Type
+                </Button>
+                {typeFilter && (
+                    <Chip
+                        label={
+                            typeFilter === 'customer_account'
+                                ? 'Customer account'
+                                : 'Guest'
+                        }
+                        onDelete={handleTypeFilterClear}
+                        color="primary"
+                        sx={{ backgroundColor: '#7c3aed' }}
+                    />
+                )}
+            </Box>
 
             {/* Customers Table */}
             <Box sx={{ px: 2 }}>
