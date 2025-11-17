@@ -766,6 +766,10 @@ export class StripeService {
         page?: number;
         status?: string;
         days?: number;
+        amount?: number;
+        amountOperator?: string;
+        currency?: string;
+        paymentMethod?: string;
     }): Promise<
         ApiResponse<{
             transactions: StripeTransactionListResponse;
@@ -786,6 +790,13 @@ export class StripeService {
             if (params?.page) query.append('page', String(params.page));
             if (params?.status) query.append('status', params.status);
             if (params?.days) query.append('days', String(params.days));
+            if (params?.amount !== undefined)
+                query.append('amount', String(params.amount));
+            if (params?.amountOperator)
+                query.append('amountOperator', params.amountOperator);
+            if (params?.currency) query.append('currency', params.currency);
+            if (params?.paymentMethod)
+                query.append('paymentMethod', params.paymentMethod);
 
             const res = await fetch(
                 `${this.baseUrl}/stripe/all-transactions-fast?${query.toString()}`

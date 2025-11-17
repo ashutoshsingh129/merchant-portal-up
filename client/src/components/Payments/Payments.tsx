@@ -32,7 +32,16 @@ import {
     Close,
     KeyboardArrowUp,
     KeyboardArrowDown,
+    ArrowDropDown,
 } from '@mui/icons-material';
+import {
+    MenuItem,
+    Select,
+    FormControl,
+    InputLabel,
+    Checkbox,
+    ListItemText,
+} from '@mui/material';
 import { styled } from '@mui/material/styles';
 import { stripeService, StripeTransaction } from '../../services/stripeService';
 
@@ -144,6 +153,29 @@ const Payments: React.FC = () => {
         useState<HTMLButtonElement | null>(null);
     const [dateFilterInput, setDateFilterInput] = useState<string>('1');
 
+    // New filter states
+    const [amountFilter, setAmountFilter] = useState<number | null>(null);
+    const [amountOperator, setAmountOperator] = useState<string>('eq');
+    const [amountFilterAnchor, setAmountFilterAnchor] =
+        useState<HTMLButtonElement | null>(null);
+    const [amountFilterInput, setAmountFilterInput] = useState<string>('0');
+
+    const [currencyFilter, setCurrencyFilter] = useState<string | null>(null);
+    const [currencyFilterAnchor, setCurrencyFilterAnchor] =
+        useState<HTMLButtonElement | null>(null);
+
+    const [statusFilter, setStatusFilter] = useState<string[]>([]);
+    const [statusFilterAnchor, setStatusFilterAnchor] =
+        useState<HTMLButtonElement | null>(null);
+
+    const [paymentMethodFilter, setPaymentMethodFilter] = useState<
+        string | null
+    >(null);
+    const [paymentMethodFilterAnchor, setPaymentMethodFilterAnchor] =
+        useState<HTMLButtonElement | null>(null);
+    const [paymentMethodFilterInput, setPaymentMethodFilterInput] =
+        useState<string>('');
+
     const fetchData = useCallback(async () => {
         try {
             setLoading(true);
@@ -155,6 +187,11 @@ const Payments: React.FC = () => {
                 page: currentPage,
                 status: selectedSummary !== 'all' ? selectedSummary : undefined,
                 days: dateFilterDays || undefined,
+                amount: amountFilter !== null ? amountFilter : undefined,
+                amountOperator:
+                    amountFilter !== null ? amountOperator : undefined,
+                currency: currencyFilter || undefined,
+                paymentMethod: paymentMethodFilter || undefined,
             });
 
             if (response.success) {
@@ -174,7 +211,15 @@ const Payments: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    }, [currentPage, selectedSummary, dateFilterDays]);
+    }, [
+        currentPage,
+        selectedSummary,
+        dateFilterDays,
+        amountFilter,
+        amountOperator,
+        currencyFilter,
+        paymentMethodFilter,
+    ]);
 
     useEffect(() => {
         fetchData();
@@ -241,6 +286,119 @@ const Payments: React.FC = () => {
         if (current > 1) {
             setDateFilterInput(String(current - 1));
         }
+    };
+
+    // Amount filter handlers
+    const handleAmountFilterClick = (
+        event: React.MouseEvent<HTMLButtonElement>
+    ) => {
+        setAmountFilterAnchor(event.currentTarget);
+    };
+
+    const handleAmountFilterClose = () => {
+        setAmountFilterAnchor(null);
+    };
+
+    const handleAmountFilterApply = () => {
+        const amount = parseFloat(amountFilterInput);
+        if (!isNaN(amount) && amount >= 0) {
+            setAmountFilter(amount);
+            setCurrentPage(1);
+            setTransactions([]);
+        }
+        handleAmountFilterClose();
+    };
+
+    const handleAmountFilterClear = () => {
+        setAmountFilter(null);
+        setAmountFilterInput('0');
+        setCurrentPage(1);
+        setTransactions([]);
+    };
+
+    // Currency filter handlers
+    const handleCurrencyFilterClick = (
+        event: React.MouseEvent<HTMLButtonElement>
+    ) => {
+        setCurrencyFilterAnchor(event.currentTarget);
+    };
+
+    const handleCurrencyFilterClose = () => {
+        setCurrencyFilterAnchor(null);
+    };
+
+    const handleCurrencyFilterApply = (currency: string) => {
+        setCurrencyFilter(currency === 'all' ? null : currency);
+        setCurrentPage(1);
+        setTransactions([]);
+        handleCurrencyFilterClose();
+    };
+
+    const handleCurrencyFilterClear = () => {
+        setCurrencyFilter(null);
+        setCurrentPage(1);
+        setTransactions([]);
+    };
+
+    // Status filter handlers
+    const handleStatusFilterClick = (
+        event: React.MouseEvent<HTMLButtonElement>
+    ) => {
+        setStatusFilterAnchor(event.currentTarget);
+    };
+
+    const handleStatusFilterClose = () => {
+        setStatusFilterAnchor(null);
+    };
+
+    const handleStatusFilterToggle = (status: string) => {
+        setStatusFilter(prev =>
+            prev.includes(status)
+                ? prev.filter(s => s !== status)
+                : [...prev, status]
+        );
+    };
+
+    const handleStatusFilterApply = () => {
+        // Note: Status filter is handled separately via selectedSummary
+        // This is for additional status filtering if needed
+        setCurrentPage(1);
+        setTransactions([]);
+        handleStatusFilterClose();
+    };
+
+    const handleStatusFilterClear = () => {
+        setStatusFilter([]);
+        setCurrentPage(1);
+        setTransactions([]);
+    };
+
+    // Payment method filter handlers
+    const handlePaymentMethodFilterClick = (
+        event: React.MouseEvent<HTMLButtonElement>
+    ) => {
+        setPaymentMethodFilterAnchor(event.currentTarget);
+    };
+
+    const handlePaymentMethodFilterClose = () => {
+        setPaymentMethodFilterAnchor(null);
+    };
+
+    const handlePaymentMethodFilterApply = () => {
+        const method = paymentMethodFilterInput.trim();
+        setPaymentMethodFilter(
+            method === '' || method === 'all' ? null : method
+        );
+        setCurrentPage(1);
+        setTransactions([]);
+        handlePaymentMethodFilterClose();
+    };
+
+    const handlePaymentMethodFilterClear = () => {
+        setPaymentMethodFilter(null);
+        setPaymentMethodFilterInput('');
+        setCurrentPage(1);
+        setTransactions([]);
     };
 
     const getStatusIcon = (status: string) => {
@@ -326,43 +484,6 @@ const Payments: React.FC = () => {
                 </Alert>
             )}
 
-            {/* Filter Bar */}
-            <Box
-                sx={{
-                    px: 2,
-                    mb: 2,
-                    display: 'flex',
-                    gap: 1,
-                    alignItems: 'center',
-                    flexWrap: 'wrap',
-                }}
-            >
-                <Button
-                    variant={dateFilterDays ? 'contained' : 'outlined'}
-                    size="small"
-                    onClick={handleDateFilterClick}
-                    startIcon={<Add />}
-                    sx={{
-                        textTransform: 'none',
-                        borderRadius: 1,
-                        ...(dateFilterDays && {
-                            backgroundColor: '#7c3aed',
-                            '&:hover': { backgroundColor: '#6d28d9' },
-                        }),
-                    }}
-                >
-                    Date and time
-                </Button>
-                {dateFilterDays && (
-                    <Chip
-                        label={`Last ${dateFilterDays} day${dateFilterDays !== 1 ? 's' : ''}`}
-                        onDelete={handleDateFilterClear}
-                        color="primary"
-                        sx={{ backgroundColor: '#7c3aed' }}
-                    />
-                )}
-            </Box>
-
             {/* Date Filter Popover */}
             <Popover
                 open={Boolean(dateFilterAnchor)}
@@ -443,6 +564,266 @@ const Payments: React.FC = () => {
                     variant="contained"
                     fullWidth
                     onClick={handleDateFilterApply}
+                    sx={{
+                        backgroundColor: '#7c3aed',
+                        '&:hover': { backgroundColor: '#6d28d9' },
+                        textTransform: 'none',
+                        py: 1.5,
+                    }}
+                >
+                    Apply
+                </Button>
+            </Popover>
+
+            {/* Amount Filter Popover */}
+            <Popover
+                open={Boolean(amountFilterAnchor)}
+                anchorEl={amountFilterAnchor}
+                onClose={handleAmountFilterClose}
+                anchorOrigin={{
+                    vertical: 'bottom',
+                    horizontal: 'left',
+                }}
+                transformOrigin={{
+                    vertical: 'top',
+                    horizontal: 'left',
+                }}
+                PaperProps={{
+                    sx: {
+                        p: 3,
+                        minWidth: 300,
+                        borderRadius: 2,
+                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                    },
+                }}
+            >
+                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                    Filter by: amount
+                </Typography>
+                <Box sx={{ mb: 2 }}>
+                    <FormControl fullWidth sx={{ mb: 2 }}>
+                        <Select
+                            value={amountOperator}
+                            onChange={e => setAmountOperator(e.target.value)}
+                            displayEmpty
+                        >
+                            <MenuItem value="eq">is equal to</MenuItem>
+                            <MenuItem value="gt">is greater than</MenuItem>
+                            <MenuItem value="lt">is less than</MenuItem>
+                            <MenuItem value="gte">
+                                is greater than or equal to
+                            </MenuItem>
+                            <MenuItem value="lte">
+                                is less than or equal to
+                            </MenuItem>
+                        </Select>
+                    </FormControl>
+                    <TextField
+                        type="number"
+                        value={amountFilterInput}
+                        onChange={e => setAmountFilterInput(e.target.value)}
+                        placeholder="0.00"
+                        fullWidth
+                        InputProps={{
+                            startAdornment: (
+                                <InputAdornment position="start">
+                                    $
+                                </InputAdornment>
+                            ),
+                        }}
+                    />
+                </Box>
+                <Button
+                    variant="contained"
+                    fullWidth
+                    onClick={handleAmountFilterApply}
+                    sx={{
+                        backgroundColor: '#7c3aed',
+                        '&:hover': { backgroundColor: '#6d28d9' },
+                        textTransform: 'none',
+                        py: 1.5,
+                    }}
+                >
+                    Apply
+                </Button>
+            </Popover>
+
+            {/* Currency Filter Popover */}
+            <Popover
+                open={Boolean(currencyFilterAnchor)}
+                anchorEl={currencyFilterAnchor}
+                onClose={handleCurrencyFilterClose}
+                anchorOrigin={{
+                    vertical: 'bottom',
+                    horizontal: 'left',
+                }}
+                transformOrigin={{
+                    vertical: 'top',
+                    horizontal: 'left',
+                }}
+                PaperProps={{
+                    sx: {
+                        p: 3,
+                        minWidth: 300,
+                        borderRadius: 2,
+                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                    },
+                }}
+            >
+                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                    Filter by: currency
+                </Typography>
+                <Box sx={{ mb: 2 }}>
+                    <FormControl fullWidth>
+                        <Select
+                            value={currencyFilter || 'all'}
+                            onChange={e =>
+                                handleCurrencyFilterApply(e.target.value)
+                            }
+                            displayEmpty
+                        >
+                            <MenuItem value="all">All currencies</MenuItem>
+                            <MenuItem value="usd">USD</MenuItem>
+                            <MenuItem value="eur">EUR</MenuItem>
+                            <MenuItem value="gbp">GBP</MenuItem>
+                            <MenuItem value="cad">CAD</MenuItem>
+                            <MenuItem value="aud">AUD</MenuItem>
+                            <MenuItem value="jpy">JPY</MenuItem>
+                        </Select>
+                    </FormControl>
+                </Box>
+            </Popover>
+
+            {/* Status Filter Popover */}
+            <Popover
+                open={Boolean(statusFilterAnchor)}
+                anchorEl={statusFilterAnchor}
+                onClose={handleStatusFilterClose}
+                anchorOrigin={{
+                    vertical: 'bottom',
+                    horizontal: 'left',
+                }}
+                transformOrigin={{
+                    vertical: 'top',
+                    horizontal: 'left',
+                }}
+                PaperProps={{
+                    sx: {
+                        p: 3,
+                        minWidth: 300,
+                        maxHeight: 400,
+                        borderRadius: 2,
+                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                        overflow: 'auto',
+                    },
+                }}
+            >
+                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                    Filter by: status
+                </Typography>
+                <Box sx={{ mb: 2 }}>
+                    {[
+                        'succeeded',
+                        'pending',
+                        'failed',
+                        'canceled',
+                        'refunded',
+                        'requires_payment_method',
+                        'requires_confirmation',
+                        'requires_action',
+                    ].map(status => (
+                        <Box
+                            key={status}
+                            sx={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                py: 1,
+                                cursor: 'pointer',
+                            }}
+                            onClick={() => handleStatusFilterToggle(status)}
+                        >
+                            <Checkbox
+                                checked={statusFilter.includes(status)}
+                                onChange={() =>
+                                    handleStatusFilterToggle(status)
+                                }
+                            />
+                            <Typography
+                                variant="body2"
+                                sx={{ textTransform: 'capitalize' }}
+                            >
+                                {status.replace(/_/g, ' ')}
+                            </Typography>
+                        </Box>
+                    ))}
+                </Box>
+                <Button
+                    variant="contained"
+                    fullWidth
+                    onClick={handleStatusFilterApply}
+                    sx={{
+                        backgroundColor: '#7c3aed',
+                        '&:hover': { backgroundColor: '#6d28d9' },
+                        textTransform: 'none',
+                        py: 1.5,
+                    }}
+                >
+                    Apply
+                </Button>
+            </Popover>
+
+            {/* Payment Method Filter Popover */}
+            <Popover
+                open={Boolean(paymentMethodFilterAnchor)}
+                anchorEl={paymentMethodFilterAnchor}
+                onClose={handlePaymentMethodFilterClose}
+                anchorOrigin={{
+                    vertical: 'bottom',
+                    horizontal: 'left',
+                }}
+                transformOrigin={{
+                    vertical: 'top',
+                    horizontal: 'left',
+                }}
+                PaperProps={{
+                    sx: {
+                        p: 3,
+                        minWidth: 300,
+                        borderRadius: 2,
+                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                    },
+                }}
+            >
+                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                    Filter by: payment method
+                </Typography>
+                <Box sx={{ mb: 2 }}>
+                    <TextField
+                        value={paymentMethodFilterInput}
+                        onChange={e =>
+                            setPaymentMethodFilterInput(e.target.value)
+                        }
+                        placeholder="Card"
+                        fullWidth
+                        InputProps={{
+                            endAdornment: (
+                                <InputAdornment position="end">
+                                    <ArrowDropDown />
+                                </InputAdornment>
+                            ),
+                        }}
+                    />
+                    <Typography
+                        variant="body2"
+                        sx={{ mt: 1, color: '#6b7280' }}
+                    >
+                        Common: card, bank_account, us_bank_account
+                    </Typography>
+                </Box>
+                <Button
+                    variant="contained"
+                    fullWidth
+                    onClick={handlePaymentMethodFilterApply}
                     sx={{
                         backgroundColor: '#7c3aed',
                         '&:hover': { backgroundColor: '#6d28d9' },
@@ -539,6 +920,152 @@ const Payments: React.FC = () => {
                     </SummaryCard>
                 </Grid>
             </Grid>
+
+            {/* Filter Bar - Below Statistics Cards */}
+            <Box
+                sx={{
+                    px: 2,
+                    mb: 2,
+                    display: 'flex',
+                    gap: 1,
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                }}
+            >
+                <Button
+                    variant={dateFilterDays ? 'contained' : 'outlined'}
+                    size="small"
+                    onClick={handleDateFilterClick}
+                    startIcon={<Add />}
+                    sx={{
+                        textTransform: 'none',
+                        borderRadius: 1,
+                        borderColor: dateFilterDays ? '#7c3aed' : '#e2e8f0',
+                        ...(dateFilterDays && {
+                            backgroundColor: '#7c3aed',
+                            '&:hover': { backgroundColor: '#6d28d9' },
+                        }),
+                    }}
+                >
+                    Date and time
+                </Button>
+                {dateFilterDays && (
+                    <Chip
+                        label={`Last ${dateFilterDays} day${dateFilterDays !== 1 ? 's' : ''}`}
+                        onDelete={handleDateFilterClear}
+                        color="primary"
+                        sx={{ backgroundColor: '#7c3aed' }}
+                    />
+                )}
+
+                <Button
+                    variant={amountFilter !== null ? 'contained' : 'outlined'}
+                    size="small"
+                    onClick={handleAmountFilterClick}
+                    startIcon={<Add />}
+                    sx={{
+                        textTransform: 'none',
+                        borderRadius: 1,
+                        borderColor:
+                            amountFilter !== null ? '#7c3aed' : '#e2e8f0',
+                        ...(amountFilter !== null && {
+                            backgroundColor: '#7c3aed',
+                            '&:hover': { backgroundColor: '#6d28d9' },
+                        }),
+                    }}
+                >
+                    Amount
+                </Button>
+                {amountFilter !== null && (
+                    <Chip
+                        label={`${amountOperator === 'eq' ? '=' : amountOperator === 'gt' ? '>' : amountOperator === 'lt' ? '<' : amountOperator === 'gte' ? '>=' : '<='} $${amountFilter.toFixed(2)}`}
+                        onDelete={handleAmountFilterClear}
+                        color="primary"
+                        sx={{ backgroundColor: '#7c3aed' }}
+                    />
+                )}
+
+                <Button
+                    variant={currencyFilter ? 'contained' : 'outlined'}
+                    size="small"
+                    onClick={handleCurrencyFilterClick}
+                    startIcon={<Add />}
+                    sx={{
+                        textTransform: 'none',
+                        borderRadius: 1,
+                        borderColor: currencyFilter ? '#7c3aed' : '#e2e8f0',
+                        ...(currencyFilter && {
+                            backgroundColor: '#7c3aed',
+                            '&:hover': { backgroundColor: '#6d28d9' },
+                        }),
+                    }}
+                >
+                    Currency
+                </Button>
+                {currencyFilter && (
+                    <Chip
+                        label={currencyFilter.toUpperCase()}
+                        onDelete={handleCurrencyFilterClear}
+                        color="primary"
+                        sx={{ backgroundColor: '#7c3aed' }}
+                    />
+                )}
+
+                <Button
+                    variant={statusFilter.length > 0 ? 'contained' : 'outlined'}
+                    size="small"
+                    onClick={handleStatusFilterClick}
+                    startIcon={<Add />}
+                    sx={{
+                        textTransform: 'none',
+                        borderRadius: 1,
+                        borderColor:
+                            statusFilter.length > 0 ? '#7c3aed' : '#e2e8f0',
+                        ...(statusFilter.length > 0 && {
+                            backgroundColor: '#7c3aed',
+                            '&:hover': { backgroundColor: '#6d28d9' },
+                        }),
+                    }}
+                >
+                    Status
+                </Button>
+                {statusFilter.length > 0 && (
+                    <Chip
+                        label={`${statusFilter.length} selected`}
+                        onDelete={handleStatusFilterClear}
+                        color="primary"
+                        sx={{ backgroundColor: '#7c3aed' }}
+                    />
+                )}
+
+                <Button
+                    variant={paymentMethodFilter ? 'contained' : 'outlined'}
+                    size="small"
+                    onClick={handlePaymentMethodFilterClick}
+                    startIcon={<Add />}
+                    sx={{
+                        textTransform: 'none',
+                        borderRadius: 1,
+                        borderColor: paymentMethodFilter
+                            ? '#7c3aed'
+                            : '#e2e8f0',
+                        ...(paymentMethodFilter && {
+                            backgroundColor: '#7c3aed',
+                            '&:hover': { backgroundColor: '#6d28d9' },
+                        }),
+                    }}
+                >
+                    Payment method
+                </Button>
+                {paymentMethodFilter && (
+                    <Chip
+                        label={paymentMethodFilter}
+                        onDelete={handlePaymentMethodFilterClear}
+                        color="primary"
+                        sx={{ backgroundColor: '#7c3aed' }}
+                    />
+                )}
+            </Box>
 
             {/* Transactions Table */}
             <Box sx={{ px: 2 }}>

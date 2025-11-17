@@ -346,6 +346,10 @@ export class StripeService {
     page?: number;
     status?: string;
     days?: number;
+    amount?: number;
+    amountOperator?: string; // 'eq', 'gt', 'lt', 'gte', 'lte'
+    currency?: string;
+    paymentMethod?: string; // 'card', 'bank_account', etc.
   }) {
     this.ensureStripe();
 
@@ -368,7 +372,7 @@ export class StripeService {
       );
       const platformPayments = await this.stripe!.paymentIntents.list({
         limit: 100, // Fetch all to get accurate count
-        expand: ['data.customer', 'data.latest_charge.refunds'],
+        expand: ['data.customer', 'data.latest_charge.refunds', 'data.payment_method'],
       });
 
       console.log(
@@ -409,6 +413,23 @@ export class StripeService {
           }
         }
 
+        // Extract payment method information
+        const paymentMethod = payment.payment_method;
+        let paymentMethodType = null;
+        let paymentMethodCard = null;
+        
+        if (paymentMethod) {
+          if (typeof paymentMethod === 'object' && paymentMethod !== null) {
+            paymentMethodType = paymentMethod.type;
+            if (paymentMethod.type === 'card' && paymentMethod.card) {
+              paymentMethodCard = {
+                brand: paymentMethod.card.brand,
+                last4: paymentMethod.card.last4,
+              };
+            }
+          }
+        }
+
         return {
           id: payment.id,
           amount: payment.amount,
@@ -426,6 +447,10 @@ export class StripeService {
           stripe_account: 'platform',
           is_refunded: isRefunded,
           refunded_amount: refundedAmount,
+          payment_method: paymentMethodType ? {
+            type: paymentMethodType,
+            card: paymentMethodCard,
+          } : undefined,
         };
       });
 
@@ -488,6 +513,52 @@ export class StripeService {
         );
         console.log(
           `Filtered by status '${params.status}': ${filteredTransactions.length} transactions (from ${dateFilteredTransactions.length} total)`,
+        );
+      }
+
+      // Apply amount filter if provided
+      if (params?.amount !== undefined && params.amount !== null) {
+        const amountInCents = Math.round(params.amount * 100); // Convert to cents
+        const operator = params.amountOperator || 'eq';
+        
+        filteredTransactions = filteredTransactions.filter((transaction: any) => {
+          switch (operator) {
+            case 'eq':
+              return transaction.amount === amountInCents;
+            case 'gt':
+              return transaction.amount > amountInCents;
+            case 'lt':
+              return transaction.amount < amountInCents;
+            case 'gte':
+              return transaction.amount >= amountInCents;
+            case 'lte':
+              return transaction.amount <= amountInCents;
+            default:
+              return transaction.amount === amountInCents;
+          }
+        });
+        console.log(
+          `Filtered by amount (${operator} ${params.amount}): ${filteredTransactions.length} transactions`,
+        );
+      }
+
+      // Apply currency filter if provided
+      if (params?.currency && params.currency !== 'all') {
+        filteredTransactions = filteredTransactions.filter(
+          (transaction: any) => transaction.currency.toLowerCase() === params.currency.toLowerCase(),
+        );
+        console.log(
+          `Filtered by currency '${params.currency}': ${filteredTransactions.length} transactions`,
+        );
+      }
+
+      // Apply payment method filter if provided
+      if (params?.paymentMethod && params.paymentMethod !== 'all') {
+        filteredTransactions = filteredTransactions.filter((transaction: any) => {
+          return transaction.payment_method?.type === params.paymentMethod;
+        });
+        console.log(
+          `Filtered by payment method '${params.paymentMethod}': ${filteredTransactions.length} transactions`,
         );
       }
 
