@@ -65,6 +65,44 @@ export class StripeService {
     }
   }
 
+  /**
+   * Helper function to extract customer information from payment intent or charge
+   * Handles both string ID and expanded customer object
+   */
+  private extractCustomerInfo(paymentOrCharge: any): { id: string; email?: string } | undefined {
+    if (!paymentOrCharge.customer) {
+      return undefined;
+    }
+
+    let customerId: string | undefined;
+    let customerEmail: string | undefined;
+
+    if (typeof paymentOrCharge.customer === 'string') {
+      // Customer is just an ID
+      customerId = paymentOrCharge.customer;
+      // Use receipt_email or billing_details.email as fallback for email
+      customerEmail = paymentOrCharge.receipt_email 
+        || paymentOrCharge.billing_details?.email 
+        || undefined;
+    } else if (typeof paymentOrCharge.customer === 'object' && paymentOrCharge.customer !== null) {
+      // Customer is expanded object
+      customerId = paymentOrCharge.customer.id || undefined;
+      customerEmail = paymentOrCharge.customer.email 
+        || paymentOrCharge.receipt_email 
+        || paymentOrCharge.billing_details?.email 
+        || undefined;
+    }
+
+    if (!customerId) {
+      return undefined;
+    }
+
+    return {
+      id: customerId,
+      email: customerEmail,
+    };
+  }
+
   // OPTIMIZED METHODS FOR FAST LOADING
 
   /**
@@ -117,12 +155,7 @@ export class StripeService {
         currency: payment.currency,
         status: payment.status,
         description: payment.description,
-        customer: payment.customer
-          ? {
-              id: String(payment.customer),
-              email: payment.receipt_email,
-            }
-          : undefined,
+        customer: this.extractCustomerInfo(payment),
         created: payment.created,
         metadata: payment.metadata,
         stripe_account: account,
@@ -372,7 +405,15 @@ export class StripeService {
       );
       const platformPayments = await this.stripe!.paymentIntents.list({
         limit: 100, // Fetch all to get accurate count
-        expand: ['data.customer', 'data.latest_charge.refunds', 'data.payment_method'],
+        expand: [
+          'data.customer',
+          'data.latest_charge',
+          'data.latest_charge.outcome',
+          'data.latest_charge.refunds',
+          'data.latest_charge.balance_transaction',
+          'data.latest_charge.transfer_data',
+          'data.payment_method',
+        ],
       });
 
       console.log(
@@ -380,13 +421,19 @@ export class StripeService {
       );
 
       const platformTransactions = platformPayments.data.map((payment) => {
-        // Check if payment has refunds by checking the latest charge
-        let isRefunded = false;
-        let refundedAmount = 0;
-
         // Access latest_charge through the payment object (may be expanded)
         const paymentAny = payment as any;
         const latestCharge = paymentAny.latest_charge;
+        
+        // Extract outcome for decline reason
+        const outcome = latestCharge?.outcome;
+        const refunds = latestCharge?.refunds?.data || [];
+        const balanceTransaction = latestCharge?.balance_transaction;
+        const transferData = latestCharge?.transfer_data;
+
+        // Check if payment has refunds by checking the latest charge
+        let isRefunded = false;
+        let refundedAmount = 0;
 
         if (latestCharge) {
           // If latest_charge is expanded, it's an object; otherwise it's a string ID
@@ -395,13 +442,9 @@ export class StripeService {
             if (latestCharge.refunded) {
               isRefunded = true;
               refundedAmount += latestCharge.amount_refunded || 0;
-            } else if (
-              latestCharge.refunds &&
-              latestCharge.refunds.data &&
-              latestCharge.refunds.data.length > 0
-            ) {
+            } else if (refunds && refunds.length > 0) {
               isRefunded = true;
-              refundedAmount += latestCharge.refunds.data.reduce(
+              refundedAmount += refunds.reduce(
                 (sum: number, refund: any) => sum + (refund.amount || 0),
                 0,
               );
@@ -435,22 +478,32 @@ export class StripeService {
           amount: payment.amount,
           currency: payment.currency,
           status: payment.status,
-          description: payment.description,
-          customer: payment.customer
-            ? {
-                id: String(payment.customer),
-                email: payment.receipt_email,
-              }
-            : undefined,
+          description: payment.description || undefined,
+          customer: this.extractCustomerInfo(payment),
           created: payment.created,
-          metadata: payment.metadata,
+          metadata: payment.metadata || {},
           stripe_account: 'platform',
           is_refunded: isRefunded,
           refunded_amount: refundedAmount,
+          amount_received: payment.amount_received || undefined,
           payment_method: paymentMethodType ? {
             type: paymentMethodType,
             card: paymentMethodCard,
           } : undefined,
+          // Decline reason and failure details
+          decline_reason: outcome?.reason || outcome?.failure_code || outcome?.decline_reason || undefined,
+          failure_message: outcome?.failure_message || undefined,
+          risk_level: outcome?.risk_level || undefined,
+          // Settlement and transfer information
+          settlement_merchant:
+            transferData?.destination ||
+            balanceTransaction?.destination ||
+            undefined,
+          // Terminal information (if available in metadata)
+          terminal_location:
+            payment.metadata?.terminal_location ||
+            payment.metadata?.location_id ||
+            undefined,
         };
       });
 
@@ -855,12 +908,7 @@ export class StripeService {
       currency: payment.currency,
       status: payment.status,
       description: payment.description,
-      customer: payment.customer
-        ? {
-            id: String(payment.customer),
-            email: payment.receipt_email,
-          }
-        : undefined,
+      customer: this.extractCustomerInfo(payment),
       created: payment.created,
       metadata: payment.metadata as Record<string, string>,
       fee: (payment as any).application_fee_amount,
@@ -910,12 +958,7 @@ export class StripeService {
       currency: payment.currency,
       status: payment.status,
       description: payment.description ?? undefined,
-      customer: payment.customer
-        ? {
-            id: String(payment.customer),
-            email: payment.receipt_email ?? undefined,
-          }
-        : undefined,
+      customer: this.extractCustomerInfo(payment),
       // Enhanced payment method with more details
       payment_method: (payment as any).payment_method
         ? {
@@ -1156,12 +1199,7 @@ export class StripeService {
         currency: payment.currency,
         status: payment.status,
         description: payment.description ?? undefined,
-        customer: payment.customer
-          ? {
-              id: String(payment.customer),
-              email: payment.receipt_email ?? undefined,
-            }
-          : undefined,
+        customer: this.extractCustomerInfo(payment),
         // Enhanced payment method with more details
         payment_method: (payment as any).payment_method
           ? {
@@ -1247,15 +1285,7 @@ export class StripeService {
       status: charge.status === 'succeeded' ? 'succeeded' : charge.status,
       description:
         charge.description ?? charge.metadata?.description ?? undefined,
-      customer: charge.customer
-        ? {
-            id: String(charge.customer),
-            email:
-              charge.receipt_email ??
-              charge.billing_details?.email ??
-              undefined,
-          }
-        : undefined,
+      customer: this.extractCustomerInfo(charge),
       payment_method: charge.payment_method_details
         ? {
             type: charge.payment_method_details.type,

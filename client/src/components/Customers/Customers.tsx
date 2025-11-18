@@ -98,17 +98,18 @@ const StyledTable = styled(Table)(({ theme }) => ({
         whiteSpace: 'nowrap',
         minWidth: '120px',
     },
-    '& .MuiTableCell-root:nth-of-type(1)': { minWidth: '150px' }, // Name
-    '& .MuiTableCell-root:nth-of-type(2)': { minWidth: '200px' }, // Email
-    '& .MuiTableCell-root:nth-of-type(3)': { minWidth: '150px' }, // Phone
-    '& .MuiTableCell-root:nth-of-type(4)': { minWidth: '120px' }, // Balance
-    '& .MuiTableCell-root:nth-of-type(5)': { minWidth: '120px' }, // Currency
-    '& .MuiTableCell-root:nth-of-type(6)': { minWidth: '120px' }, // Delinquent
-    '& .MuiTableCell-root:nth-of-type(7)': { minWidth: '200px' }, // Address
-    '& .MuiTableCell-root:nth-of-type(8)': { minWidth: '200px' }, // Shipping Address
-    '& .MuiTableCell-root:nth-of-type(9)': { minWidth: '150px' }, // Description
-    '& .MuiTableCell-root:nth-of-type(10)': { minWidth: '120px' }, // Tax Exempt
-    '& .MuiTableCell-root:nth-of-type(11)': { minWidth: '140px' }, // Created
+    '& .MuiTableCell-root:nth-of-type(1)': { minWidth: '150px' }, // Customer ID
+    '& .MuiTableCell-root:nth-of-type(2)': { minWidth: '150px' }, // Name
+    '& .MuiTableCell-root:nth-of-type(3)': { minWidth: '200px' }, // Email
+    '& .MuiTableCell-root:nth-of-type(4)': { minWidth: '150px' }, // Phone
+    '& .MuiTableCell-root:nth-of-type(5)': { minWidth: '120px' }, // Balance
+    '& .MuiTableCell-root:nth-of-type(6)': { minWidth: '120px' }, // Currency
+    '& .MuiTableCell-root:nth-of-type(7)': { minWidth: '120px' }, // Delinquent
+    '& .MuiTableCell-root:nth-of-type(8)': { minWidth: '200px' }, // Address
+    '& .MuiTableCell-root:nth-of-type(9)': { minWidth: '200px' }, // Shipping Address
+    '& .MuiTableCell-root:nth-of-type(10)': { minWidth: '150px' }, // Description
+    '& .MuiTableCell-root:nth-of-type(11)': { minWidth: '120px' }, // Tax Exempt
+    '& .MuiTableCell-root:nth-of-type(12)': { minWidth: '140px' }, // Created
 }));
 
 const Customers: React.FC = () => {
@@ -902,6 +903,7 @@ const Customers: React.FC = () => {
                     <StyledTable>
                         <TableHead>
                             <TableRow>
+                                <TableCell>Customer ID</TableCell>
                                 <TableCell>Name</TableCell>
                                 <TableCell>Email</TableCell>
                                 <TableCell>Phone</TableCell>
@@ -918,6 +920,14 @@ const Customers: React.FC = () => {
                         <TableBody>
                             {customers.map(customer => (
                                 <TableRow key={customer.id}>
+                                    <TableCell>
+                                        <Typography
+                                            variant="body2"
+                                            color="text.secondary"
+                                        >
+                                            {customer.id || '-'}
+                                        </Typography>
+                                    </TableCell>
                                     <TableCell>
                                         <Typography variant="body2">
                                             {customer.name || '-'}

@@ -116,9 +116,10 @@ const StyledTable = styled(Table)(({ theme }) => ({
     '& .MuiTableCell-root:nth-of-type(7)': { minWidth: '150px' }, // Settlement Merchant
     '& .MuiTableCell-root:nth-of-type(8)': { minWidth: '150px' }, // Terminal Location
     '& .MuiTableCell-root:nth-of-type(9)': { minWidth: '150px' }, // Description
-    '& .MuiTableCell-root:nth-of-type(10)': { minWidth: '150px' }, // Customer
-    '& .MuiTableCell-root:nth-of-type(11)': { minWidth: '150px' }, // Account
-    '& .MuiTableCell-root:nth-of-type(12)': { minWidth: '140px' }, // Date
+    '& .MuiTableCell-root:nth-of-type(10)': { minWidth: '150px' }, // Customer Email
+    '& .MuiTableCell-root:nth-of-type(11)': { minWidth: '150px' }, // Customer ID
+    '& .MuiTableCell-root:nth-of-type(12)': { minWidth: '150px' }, // Account
+    '& .MuiTableCell-root:nth-of-type(13)': { minWidth: '140px' }, // Date
 }));
 
 const CardBrandBox = styled(Box)(({ theme }) => ({
@@ -1608,7 +1609,8 @@ const Payments: React.FC = () => {
                                 <TableCell>Settlement Merchant</TableCell>
                                 <TableCell>Terminal Location</TableCell>
                                 <TableCell>Description</TableCell>
-                                <TableCell>Customer</TableCell>
+                                <TableCell>Customer Email</TableCell>
+                                <TableCell>Customer ID</TableCell>
                                 <TableCell>Account</TableCell>
                                 <TableCell>Date</TableCell>
                             </TableRow>
@@ -1736,6 +1738,14 @@ const Payments: React.FC = () => {
                                     <TableCell>
                                         <Typography variant="body2">
                                             {transaction.customer?.email || '-'}
+                                        </Typography>
+                                    </TableCell>
+                                    <TableCell>
+                                        <Typography
+                                            variant="body2"
+                                            color="text.secondary"
+                                        >
+                                            {transaction.customer?.id || '-'}
                                         </Typography>
                                     </TableCell>
                                     <TableCell>
