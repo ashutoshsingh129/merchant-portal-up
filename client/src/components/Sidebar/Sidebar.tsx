@@ -192,6 +192,24 @@ const Sidebar: React.FC<SidebarProps> = ({ open, onToggle }) => {
             </DrawerHeader>
 
             <List>
+                {/* Dashboard Item */}
+                <ListItem disablePadding>
+                    <StyledListItemButton
+                        selected={selectedItem === '/dashboard'}
+                        onClick={() =>
+                            handleItemClick('dashboard', '/dashboard')
+                        }
+                        sx={{ pl: 2 }}
+                    >
+                        <StyledListItemIcon>
+                            <Home />
+                        </StyledListItemIcon>
+                        <Collapse in={open} timeout="auto" unmountOnExit>
+                            <StyledListItemText primary="Dashboard" />
+                        </Collapse>
+                    </StyledListItemButton>
+                </ListItem>
+
                 {mainMenuItems.map(item => (
                     <React.Fragment key={item.id}>
                         {/* Main Transactions Item */}

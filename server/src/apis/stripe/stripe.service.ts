@@ -1788,4 +1788,116 @@ export class StripeService {
       throw error;
     }
   }
+
+  /**
+   * Get volume data for dashboard graphs (gross and net volume over time)
+   */
+  async getVolumeData(params?: {
+    days?: number; // Number of days to look back (default: 1 for today)
+    groupBy?: 'hour' | 'day'; // Group by hour or day (default: 'hour' for today, 'day' for longer periods)
+  }) {
+    this.ensureStripe();
+
+    const days = params?.days || 1;
+    const groupBy = params?.groupBy || (days === 1 ? 'hour' : 'day');
+    const cacheKey = `volume_data_${days}_${groupBy}`;
+    
+    const cached = this.cache.get(cacheKey);
+    if (cached) {
+      console.log(`Cache hit for volume data: ${days}_${groupBy}`);
+      return cached;
+    }
+
+    try {
+      const now = Math.floor(Date.now() / 1000);
+      const startTime = now - days * 24 * 60 * 60;
+
+      // Fetch payment intents with latest_charge expanded to get net amounts
+      const payments = await this.stripe!.paymentIntents.list({
+        limit: 100,
+        created: { gte: startTime },
+        expand: ['data.latest_charge.balance_transaction'],
+      });
+
+      // Group data by time period
+      const volumeMap = new Map<string, { gross: number; net: number; count: number }>();
+
+      payments.data.forEach((payment) => {
+        if (payment.status !== 'succeeded') return;
+
+        const created = payment.created;
+        let timeKey: string;
+
+        if (groupBy === 'hour') {
+          const date = new Date(created * 1000);
+          const hour = date.getHours();
+          const dateStr = date.toISOString().split('T')[0];
+          timeKey = `${dateStr} ${hour.toString().padStart(2, '0')}:00`;
+        } else {
+          const date = new Date(created * 1000);
+          timeKey = date.toISOString().split('T')[0];
+        }
+
+        const gross = payment.amount || 0;
+        
+        // Get net amount from balance transaction (amount after fees)
+        let net = gross;
+        const paymentAny = payment as any;
+        const balanceTransaction = paymentAny.latest_charge?.balance_transaction;
+        
+        if (balanceTransaction && typeof balanceTransaction === 'object') {
+          net = balanceTransaction.net || gross;
+        } else {
+          // Fallback: estimate net as gross minus 2.9% + $0.30 (typical Stripe fee)
+          net = Math.round(gross * 0.971 - 30);
+        }
+
+        const existing = volumeMap.get(timeKey) || { gross: 0, net: 0, count: 0 };
+        volumeMap.set(timeKey, {
+          gross: existing.gross + gross,
+          net: existing.net + net,
+          count: existing.count + 1,
+        });
+      });
+
+      // Convert to array and sort by time
+      const volumeData = Array.from(volumeMap.entries())
+        .map(([time, data]) => ({
+          time,
+          gross: data.gross / 100, // Convert cents to dollars
+          net: data.net / 100, // Convert cents to dollars
+          count: data.count,
+        }))
+        .sort((a, b) => a.time.localeCompare(b.time));
+
+      // Calculate totals
+      const totals = volumeData.reduce(
+        (acc, item) => ({
+          gross: acc.gross + item.gross,
+          net: acc.net + item.net,
+          count: acc.count + item.count,
+        }),
+        { gross: 0, net: 0, count: 0 }
+      );
+
+      const result = {
+        data: volumeData,
+        totals,
+        period: {
+          days,
+          groupBy,
+          startTime,
+          endTime: now,
+        },
+      };
+
+      // Cache for 2 minutes
+      this.cache.set(cacheKey, result, 120000);
+
+      return result;
+    } catch (error) {
+      console.error('Error fetching volume data:', error);
+      throw error;
+    }
+  }
 }

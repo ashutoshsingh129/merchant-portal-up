@@ -953,6 +953,69 @@ export class StripeService {
             };
         }
     }
+
+    // Get volume data for dashboard graphs
+    async getVolumeData(params?: {
+        days?: number;
+        groupBy?: 'hour' | 'day';
+    }): Promise<
+        ApiResponse<{
+            data: Array<{
+                time: string;
+                gross: number;
+                net: number;
+                count: number;
+            }>;
+            totals: {
+                gross: number;
+                net: number;
+                count: number;
+            };
+            period: {
+                days: number;
+                groupBy: 'hour' | 'day';
+                startTime: number;
+                endTime: number;
+            };
+        }>
+    > {
+        try {
+            const query = new URLSearchParams();
+            if (params?.days) query.append('days', String(params.days));
+            if (params?.groupBy) query.append('groupBy', params.groupBy);
+
+            const res = await fetch(
+                `${this.baseUrl}/stripe/volume-data?${query.toString()}`
+            );
+            if (!res.ok) throw new Error('Failed to fetch volume data');
+            const body = await res.json();
+
+            return {
+                data: body,
+                message: 'Volume data fetched successfully',
+                success: true,
+            };
+        } catch (error) {
+            console.error('Error fetching volume data:', error);
+            return {
+                data: {
+                    data: [],
+                    totals: { gross: 0, net: 0, count: 0 },
+                    period: {
+                        days: params?.days || 1,
+                        groupBy: params?.groupBy || 'hour',
+                        startTime: 0,
+                        endTime: 0,
+                    },
+                },
+                message:
+                    error instanceof Error
+                        ? error.message
+                        : 'Failed to fetch volume data',
+                success: false,
+            };
+        }
+    }
 }
 
 // Export singleton instance

@@ -173,6 +173,17 @@ export class StripeController {
     this.stripeService.clearCache(body.pattern);
     return { message: 'Cache cleared successfully' };
   }
+
+  @Get('volume-data')
+  getVolumeData(
+    @Query('days') days?: string,
+    @Query('groupBy') groupBy?: 'hour' | 'day',
+  ) {
+    return this.stripeService.getVolumeData({
+      days: days ? parseInt(days) : undefined,
+      groupBy,
+    });
+  }
 }
 
 
