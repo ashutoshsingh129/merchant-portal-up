@@ -958,6 +958,7 @@ export class StripeService {
     async getVolumeData(params?: {
         days?: number;
         groupBy?: 'hour' | 'day';
+        date?: Date;
     }): Promise<
         ApiResponse<{
             data: Array<{
@@ -965,11 +966,13 @@ export class StripeService {
                 gross: number;
                 net: number;
                 count: number;
+                newCustomers: number;
             }>;
             totals: {
                 gross: number;
                 net: number;
                 count: number;
+                newCustomers: number;
             };
             period: {
                 days: number;
@@ -983,6 +986,9 @@ export class StripeService {
             const query = new URLSearchParams();
             if (params?.days) query.append('days', String(params.days));
             if (params?.groupBy) query.append('groupBy', params.groupBy);
+            if (params?.date) {
+                query.append('date', params.date.toISOString());
+            }
 
             const res = await fetch(
                 `${this.baseUrl}/stripe/volume-data?${query.toString()}`
@@ -1000,7 +1006,7 @@ export class StripeService {
             return {
                 data: {
                     data: [],
-                    totals: { gross: 0, net: 0, count: 0 },
+                    totals: { gross: 0, net: 0, count: 0, newCustomers: 0 },
                     period: {
                         days: params?.days || 1,
                         groupBy: params?.groupBy || 'hour',

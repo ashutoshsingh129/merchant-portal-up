@@ -1795,32 +1795,61 @@ export class StripeService {
   async getVolumeData(params?: {
     days?: number; // Number of days to look back (default: 1 for today)
     groupBy?: 'hour' | 'day'; // Group by hour or day (default: 'hour' for today, 'day' for longer periods)
+    date?: Date; // Specific date to filter by (for a single day)
   }) {
     this.ensureStripe();
 
-    const days = params?.days || 1;
-    const groupBy = params?.groupBy || (days === 1 ? 'hour' : 'day');
-    const cacheKey = `volume_data_${days}_${groupBy}`;
+    // Determine start and end times
+    let startTime: number;
+    let endTime: number;
+    
+    if (params?.date) {
+      // Use specific date - get data for that entire day
+      const selectedDate = new Date(params.date);
+      selectedDate.setHours(0, 0, 0, 0);
+      startTime = Math.floor(selectedDate.getTime() / 1000);
+      
+      const endOfDay = new Date(selectedDate);
+      endOfDay.setHours(23, 59, 59, 999);
+      endTime = Math.floor(endOfDay.getTime() / 1000);
+    } else {
+      // Use days parameter
+      const days = params?.days || 1;
+      const now = Math.floor(Date.now() / 1000);
+      endTime = now;
+      startTime = now - days * 24 * 60 * 60;
+    }
+
+    // Determine groupBy - always use 'hour' for single day, 'day' for multiple days
+    const dateRange = endTime - startTime;
+    const daysInRange = dateRange / (24 * 60 * 60);
+    const groupBy = params?.groupBy || (daysInRange <= 1 ? 'hour' : 'day');
+    
+    const cacheKey = `volume_data_${startTime}_${endTime}_${groupBy}`;
     
     const cached = this.cache.get(cacheKey);
     if (cached) {
-      console.log(`Cache hit for volume data: ${days}_${groupBy}`);
+      console.log(`Cache hit for volume data: ${startTime}_${endTime}_${groupBy}`);
       return cached;
     }
 
     try {
-      const now = Math.floor(Date.now() / 1000);
-      const startTime = now - days * 24 * 60 * 60;
 
       // Fetch payment intents with latest_charge expanded to get net amounts
       const payments = await this.stripe!.paymentIntents.list({
         limit: 100,
-        created: { gte: startTime },
+        created: { gte: startTime, lte: endTime },
         expand: ['data.latest_charge.balance_transaction'],
       });
 
+      // Fetch customers created in the same time period
+      const customers = await this.stripe!.customers.list({
+        limit: 100,
+        created: { gte: startTime, lte: endTime },
+      });
+
       // Group data by time period
-      const volumeMap = new Map<string, { gross: number; net: number; count: number }>();
+      const volumeMap = new Map<string, { gross: number; net: number; count: number; newCustomers: number }>();
 
       payments.data.forEach((payment) => {
         if (payment.status !== 'succeeded') return;
@@ -1852,11 +1881,34 @@ export class StripeService {
           net = Math.round(gross * 0.971 - 30);
         }
 
-        const existing = volumeMap.get(timeKey) || { gross: 0, net: 0, count: 0 };
+        const existing = volumeMap.get(timeKey) || { gross: 0, net: 0, count: 0, newCustomers: 0 };
         volumeMap.set(timeKey, {
           gross: existing.gross + gross,
           net: existing.net + net,
           count: existing.count + 1,
+          newCustomers: existing.newCustomers,
+        });
+      });
+
+      // Count new customers by time period
+      customers.data.forEach((customer) => {
+        const created = customer.created;
+        let timeKey: string;
+
+        if (groupBy === 'hour') {
+          const date = new Date(created * 1000);
+          const hour = date.getHours();
+          const dateStr = date.toISOString().split('T')[0];
+          timeKey = `${dateStr} ${hour.toString().padStart(2, '0')}:00`;
+        } else {
+          const date = new Date(created * 1000);
+          timeKey = date.toISOString().split('T')[0];
+        }
+
+        const existing = volumeMap.get(timeKey) || { gross: 0, net: 0, count: 0, newCustomers: 0 };
+        volumeMap.set(timeKey, {
+          ...existing,
+          newCustomers: existing.newCustomers + 1,
         });
       });
 
@@ -1867,6 +1919,7 @@ export class StripeService {
           gross: data.gross / 100, // Convert cents to dollars
           net: data.net / 100, // Convert cents to dollars
           count: data.count,
+          newCustomers: data.newCustomers,
         }))
         .sort((a, b) => a.time.localeCompare(b.time));
 
@@ -1876,18 +1929,19 @@ export class StripeService {
           gross: acc.gross + item.gross,
           net: acc.net + item.net,
           count: acc.count + item.count,
+          newCustomers: acc.newCustomers + item.newCustomers,
         }),
-        { gross: 0, net: 0, count: 0 }
+        { gross: 0, net: 0, count: 0, newCustomers: 0 }
       );
 
       const result = {
         data: volumeData,
         totals,
         period: {
-          days,
+          days: Math.ceil((endTime - startTime) / (24 * 60 * 60)),
           groupBy,
           startTime,
-          endTime: now,
+          endTime,
         },
       };
 

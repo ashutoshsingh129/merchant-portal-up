@@ -178,10 +178,12 @@ export class StripeController {
   getVolumeData(
     @Query('days') days?: string,
     @Query('groupBy') groupBy?: 'hour' | 'day',
+    @Query('date') date?: string,
   ) {
     return this.stripeService.getVolumeData({
       days: days ? parseInt(days) : undefined,
       groupBy,
+      date: date ? new Date(date) : undefined,
     });
   }
 }
