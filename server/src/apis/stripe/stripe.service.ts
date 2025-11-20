@@ -378,6 +378,7 @@ export class StripeService {
     limit?: number;
     page?: number;
     status?: string;
+    statusFilter?: string[]; // Array of raw payment intent statuses
     days?: number;
     amount?: number;
     amountOperator?: string; // 'eq', 'gt', 'lt', 'gte', 'lte'
@@ -535,7 +536,39 @@ export class StripeService {
 
       // Apply status filter if provided
       let filteredTransactions = dateFilteredTransactions;
-      if (params?.status && params.status !== 'all') {
+      
+      // If statusFilter array is provided, filter by raw payment intent statuses
+      if (params?.statusFilter && params.statusFilter.length > 0) {
+        filteredTransactions = dateFilteredTransactions.filter(
+          (transaction: any) => {
+            const status = transaction.status as string;
+            
+            // Handle special case: 'refunded' status filter should check is_refunded flag
+            // If 'refunded' is in the filter and transaction is refunded, include it
+            if (params.statusFilter!.includes('refunded')) {
+              if (transaction.is_refunded) return true;
+            }
+            
+            // For status matching: check if the transaction status is in the filter array
+            // Note: If 'succeeded' is in filter, we still want succeeded transactions even if they're refunded
+            // (user can explicitly filter by both 'succeeded' and 'refunded' if they want only refunded succeeded)
+            if (params.statusFilter!.includes(status)) {
+              // Special handling: if filtering by 'succeeded' but not 'refunded', exclude refunded succeeded transactions
+              // This matches Stripe dashboard behavior where 'succeeded' excludes refunded
+              if (status === 'succeeded' && !params.statusFilter!.includes('refunded') && transaction.is_refunded) {
+                return false;
+              }
+              return true;
+            }
+            
+            return false;
+          },
+        );
+        console.log(
+          `Filtered by statusFilter [${params.statusFilter.join(', ')}]: ${filteredTransactions.length} transactions (from ${dateFilteredTransactions.length} total)`,
+        );
+      } else if (params?.status && params.status !== 'all') {
+        // Legacy status filter using summary categories
         filteredTransactions = dateFilteredTransactions.filter(
           (transaction: any) => {
             const status = transaction.status as string;

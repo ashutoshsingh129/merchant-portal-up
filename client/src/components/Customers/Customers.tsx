@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
     Box,
     Typography,
@@ -146,6 +146,10 @@ const Customers: React.FC = () => {
     const [typeFilter, setTypeFilter] = useState<string | null>(null);
     const [typeFilterAnchor, setTypeFilterAnchor] =
         useState<HTMLButtonElement | null>(null);
+
+    // Refs for Popover containers to fix Select menu positioning
+    const cardFilterPopoverRef = useRef<HTMLElement>(null);
+    const typeFilterPopoverRef = useRef<HTMLElement>(null);
 
     const fetchData = useCallback(async () => {
         try {
@@ -466,13 +470,20 @@ const Customers: React.FC = () => {
                     vertical: 'top',
                     horizontal: 'left',
                 }}
-                PaperProps={{
-                    sx: {
-                        p: 3,
-                        minWidth: 300,
-                        borderRadius: 2,
-                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                        mt: 0.5, // Small gap below button
+                anchorReference="anchorEl"
+                disableAutoFocus
+                disableEnforceFocus
+                disableRestoreFocus
+                disableScrollLock
+                slotProps={{
+                    paper: {
+                        sx: {
+                            p: 3,
+                            minWidth: 300,
+                            borderRadius: 2,
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                            mt: 0.5, // Small gap below button
+                        },
                     },
                 }}
             >
@@ -521,15 +532,44 @@ const Customers: React.FC = () => {
                     vertical: 'top',
                     horizontal: 'left',
                 }}
-                PaperProps={{
-                    sx: {
-                        p: 3,
-                        minWidth: 300,
-                        borderRadius: 2,
-                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                        mt: 0.5, // Small gap below button
+                anchorReference="anchorEl"
+                disableAutoFocus
+                disableEnforceFocus
+                disableRestoreFocus
+                disableScrollLock
+                disablePortal
+                slotProps={{
+                    paper: {
+                        sx: {
+                            p: 3,
+                            minWidth: 300,
+                            borderRadius: 2,
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                            mt: 0.5, // Small gap below button
+                        },
+                        ref: (el: HTMLElement | null) => {
+                            if (el) cardFilterPopoverRef.current = el;
+                        },
+                        onMouseDown: e => e.stopPropagation(),
                     },
                 }}
+                modifiers={[
+                    {
+                        name: 'preventOverflow',
+                        enabled: false,
+                    },
+                    {
+                        name: 'flip',
+                        enabled: false,
+                    },
+                    {
+                        name: 'offset',
+                        enabled: true,
+                        options: {
+                            offset: [0, 4],
+                        },
+                    },
+                ]}
             >
                 <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
                     Filter by: card
@@ -542,6 +582,40 @@ const Customers: React.FC = () => {
                                 handleCardFilterApply(e.target.value)
                             }
                             displayEmpty
+                            onOpen={e => e.stopPropagation()}
+                            onClose={e => e.stopPropagation()}
+                            MenuProps={{
+                                container:
+                                    cardFilterPopoverRef.current ||
+                                    document.body,
+                                disablePortal: true,
+                                disableScrollLock: true,
+                                disableAutoFocusItem: true,
+                                anchorOrigin: {
+                                    vertical: 'bottom',
+                                    horizontal: 'left',
+                                },
+                                transformOrigin: {
+                                    vertical: 'top',
+                                    horizontal: 'left',
+                                },
+                                PaperProps: {
+                                    sx: {
+                                        maxHeight: 300,
+                                    },
+                                    onMouseDown: e => e.stopPropagation(),
+                                },
+                                modifiers: [
+                                    {
+                                        name: 'preventOverflow',
+                                        enabled: false,
+                                    },
+                                    {
+                                        name: 'flip',
+                                        enabled: false,
+                                    },
+                                ],
+                            }}
                         >
                             <MenuItem value="all">All</MenuItem>
                             <MenuItem value="has_card">
@@ -568,13 +642,20 @@ const Customers: React.FC = () => {
                     vertical: 'top',
                     horizontal: 'left',
                 }}
-                PaperProps={{
-                    sx: {
-                        p: 3,
-                        minWidth: 300,
-                        borderRadius: 2,
-                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                        mt: 0.5, // Small gap below button
+                anchorReference="anchorEl"
+                disableAutoFocus
+                disableEnforceFocus
+                disableRestoreFocus
+                disableScrollLock
+                slotProps={{
+                    paper: {
+                        sx: {
+                            p: 3,
+                            minWidth: 300,
+                            borderRadius: 2,
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                            mt: 0.5, // Small gap below button
+                        },
                     },
                 }}
             >
@@ -660,15 +741,44 @@ const Customers: React.FC = () => {
                     vertical: 'top',
                     horizontal: 'left',
                 }}
-                PaperProps={{
-                    sx: {
-                        p: 3,
-                        minWidth: 300,
-                        borderRadius: 2,
-                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                        mt: 0.5, // Small gap below button
+                anchorReference="anchorEl"
+                disableAutoFocus
+                disableEnforceFocus
+                disableRestoreFocus
+                disableScrollLock
+                disablePortal
+                slotProps={{
+                    paper: {
+                        sx: {
+                            p: 3,
+                            minWidth: 300,
+                            borderRadius: 2,
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                            mt: 0.5, // Small gap below button
+                        },
+                        ref: (el: HTMLElement | null) => {
+                            if (el) typeFilterPopoverRef.current = el;
+                        },
+                        onMouseDown: e => e.stopPropagation(),
                     },
                 }}
+                modifiers={[
+                    {
+                        name: 'preventOverflow',
+                        enabled: false,
+                    },
+                    {
+                        name: 'flip',
+                        enabled: false,
+                    },
+                    {
+                        name: 'offset',
+                        enabled: true,
+                        options: {
+                            offset: [0, 4],
+                        },
+                    },
+                ]}
             >
                 <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
                     Filter by: type
@@ -681,6 +791,40 @@ const Customers: React.FC = () => {
                                 handleTypeFilterApply(e.target.value)
                             }
                             displayEmpty
+                            onOpen={e => e.stopPropagation()}
+                            onClose={e => e.stopPropagation()}
+                            MenuProps={{
+                                container:
+                                    typeFilterPopoverRef.current ||
+                                    document.body,
+                                disablePortal: true,
+                                disableScrollLock: true,
+                                disableAutoFocusItem: true,
+                                anchorOrigin: {
+                                    vertical: 'bottom',
+                                    horizontal: 'left',
+                                },
+                                transformOrigin: {
+                                    vertical: 'top',
+                                    horizontal: 'left',
+                                },
+                                PaperProps: {
+                                    sx: {
+                                        maxHeight: 300,
+                                    },
+                                    onMouseDown: e => e.stopPropagation(),
+                                },
+                                modifiers: [
+                                    {
+                                        name: 'preventOverflow',
+                                        enabled: false,
+                                    },
+                                    {
+                                        name: 'flip',
+                                        enabled: false,
+                                    },
+                                ],
+                            }}
                         >
                             <MenuItem value="all">All</MenuItem>
                             <MenuItem value="customer_account">

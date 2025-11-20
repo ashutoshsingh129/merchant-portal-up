@@ -101,16 +101,23 @@ export class StripeController {
     @Query('limit') limit?: string,
     @Query('page') page?: string,
     @Query('status') status?: string,
+    @Query('statusFilter') statusFilter?: string,
     @Query('days') days?: string,
     @Query('amount') amount?: string,
     @Query('amountOperator') amountOperator?: string,
     @Query('currency') currency?: string,
     @Query('paymentMethod') paymentMethod?: string,
   ) {
+    // Parse statusFilter if provided (comma-separated string)
+    const statusFilterArray = statusFilter
+      ? statusFilter.split(',').map((s) => s.trim()).filter((s) => s.length > 0)
+      : undefined;
+
     return this.stripeService.getAllTransactionsFast({
       limit: limit ? parseInt(limit) : undefined,
       page: page ? parseInt(page) : undefined,
       status: status,
+      statusFilter: statusFilterArray,
       days: days ? parseInt(days) : undefined,
       amount: amount ? parseFloat(amount) : undefined,
       amountOperator: amountOperator,

@@ -765,6 +765,7 @@ export class StripeService {
         limit?: number;
         page?: number;
         status?: string;
+        statusFilter?: string[]; // Array of raw payment intent statuses
         days?: number;
         amount?: number;
         amountOperator?: string;
@@ -789,6 +790,9 @@ export class StripeService {
             if (params?.limit) query.append('limit', String(params.limit));
             if (params?.page) query.append('page', String(params.page));
             if (params?.status) query.append('status', params.status);
+            if (params?.statusFilter && params.statusFilter.length > 0) {
+                query.append('statusFilter', params.statusFilter.join(','));
+            }
             if (params?.days) query.append('days', String(params.days));
             if (params?.amount !== undefined)
                 query.append('amount', String(params.amount));

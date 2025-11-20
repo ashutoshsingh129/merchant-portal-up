@@ -160,6 +160,8 @@ const Payments: React.FC = () => {
     const [amountFilterAnchor, setAmountFilterAnchor] =
         useState<HTMLButtonElement | null>(null);
     const [amountFilterInput, setAmountFilterInput] = useState<string>('0');
+    // Temporary state for popover inputs (doesn't trigger API calls)
+    const [tempAmountOperator, setTempAmountOperator] = useState<string>('eq');
 
     const [currencyFilter, setCurrencyFilter] = useState<string | null>(null);
     const [currencyFilterAnchor, setCurrencyFilterAnchor] =
@@ -168,6 +170,8 @@ const Payments: React.FC = () => {
     const [statusFilter, setStatusFilter] = useState<string[]>([]);
     const [statusFilterAnchor, setStatusFilterAnchor] =
         useState<HTMLButtonElement | null>(null);
+    // Temporary state for popover checkbox selections (doesn't trigger API calls)
+    const [tempStatusFilter, setTempStatusFilter] = useState<string[]>([]);
 
     const [paymentMethodFilter, setPaymentMethodFilter] = useState<
         string | null
@@ -203,6 +207,14 @@ const Payments: React.FC = () => {
         useState<HTMLButtonElement | null>(null);
     const [disputeAmountFilterInput, setDisputeAmountFilterInput] =
         useState<string>('0');
+    // Temporary state for popover inputs (doesn't trigger API calls)
+    const [tempDisputeAmountOperator, setTempDisputeAmountOperator] =
+        useState<string>('eq');
+
+    // Refs for Popover containers to fix Select menu positioning
+    const amountFilterPopoverRef = useRef<HTMLElement>(null);
+    const currencyFilterPopoverRef = useRef<HTMLElement>(null);
+    const disputeAmountFilterPopoverRef = useRef<HTMLElement>(null);
 
     const fetchData = useCallback(async () => {
         try {
@@ -210,10 +222,16 @@ const Payments: React.FC = () => {
             setError(null);
 
             // Fetch platform transactions only
+            // Use statusFilter if it has values, otherwise use selectedSummary
             const response = await stripeService.getAllTransactionsFast({
                 limit: 50, // Smaller batches for faster loading
                 page: currentPage,
-                status: selectedSummary !== 'all' ? selectedSummary : undefined,
+                status:
+                    statusFilter.length === 0 && selectedSummary !== 'all'
+                        ? selectedSummary
+                        : undefined,
+                statusFilter:
+                    statusFilter.length > 0 ? statusFilter : undefined,
                 days: dateFilterDays || undefined,
                 amount: amountFilter !== null ? amountFilter : undefined,
                 amountOperator:
@@ -304,6 +322,7 @@ const Payments: React.FC = () => {
     }, [
         currentPage,
         selectedSummary,
+        statusFilter,
         dateFilterDays,
         amountFilter,
         amountOperator,
@@ -386,6 +405,8 @@ const Payments: React.FC = () => {
     const handleAmountFilterClick = (
         event: React.MouseEvent<HTMLButtonElement>
     ) => {
+        // Initialize temp state with current values when opening
+        setTempAmountOperator(amountOperator);
         setAmountFilterAnchor(event.currentTarget);
     };
 
@@ -397,6 +418,7 @@ const Payments: React.FC = () => {
         const amount = parseFloat(amountFilterInput);
         if (!isNaN(amount) && amount >= 0) {
             setAmountFilter(amount);
+            setAmountOperator(tempAmountOperator); // Apply temp state to actual state
             setCurrentPage(1);
             setTransactions([]);
         }
@@ -405,6 +427,7 @@ const Payments: React.FC = () => {
 
     const handleAmountFilterClear = () => {
         setAmountFilter(null);
+        setAmountOperator('eq');
         setAmountFilterInput('0');
         setCurrentPage(1);
         setTransactions([]);
@@ -438,6 +461,8 @@ const Payments: React.FC = () => {
     const handleStatusFilterClick = (
         event: React.MouseEvent<HTMLButtonElement>
     ) => {
+        // Initialize temp state with current values when opening
+        setTempStatusFilter([...statusFilter]);
         setStatusFilterAnchor(event.currentTarget);
     };
 
@@ -446,7 +471,8 @@ const Payments: React.FC = () => {
     };
 
     const handleStatusFilterToggle = (status: string) => {
-        setStatusFilter(prev =>
+        // Update temp state only (doesn't trigger API calls)
+        setTempStatusFilter(prev =>
             prev.includes(status)
                 ? prev.filter(s => s !== status)
                 : [...prev, status]
@@ -454,8 +480,8 @@ const Payments: React.FC = () => {
     };
 
     const handleStatusFilterApply = () => {
-        // Note: Status filter is handled separately via selectedSummary
-        // This is for additional status filtering if needed
+        // Apply temp state to actual state (triggers API call)
+        setStatusFilter([...tempStatusFilter]);
         setCurrentPage(1);
         setTransactions([]);
         handleStatusFilterClose();
@@ -463,6 +489,7 @@ const Payments: React.FC = () => {
 
     const handleStatusFilterClear = () => {
         setStatusFilter([]);
+        setTempStatusFilter([]);
         setCurrentPage(1);
         setTransactions([]);
     };
@@ -571,6 +598,8 @@ const Payments: React.FC = () => {
         // Store the anchor before closing more filters
         const anchor = moreFiltersAnchor;
         setMoreFiltersAnchor(null);
+        // Initialize temp state with current values when opening
+        setTempDisputeAmountOperator(disputeAmountOperator);
         // Use a small delay to ensure the more filters popover closes first
         setTimeout(() => {
             setDisputeAmountFilterAnchor(anchor);
@@ -585,6 +614,7 @@ const Payments: React.FC = () => {
         const amount = parseFloat(disputeAmountFilterInput);
         if (!isNaN(amount) && amount >= 0) {
             setDisputeAmountFilter(amount);
+            setDisputeAmountOperator(tempDisputeAmountOperator); // Apply temp state to actual state
             setCurrentPage(1);
             setTransactions([]);
         }
@@ -593,6 +623,7 @@ const Payments: React.FC = () => {
 
     const handleDisputeAmountFilterClear = () => {
         setDisputeAmountFilter(null);
+        setDisputeAmountOperator('eq');
         setDisputeAmountFilterInput('0');
         setCurrentPage(1);
         setTransactions([]);
@@ -694,13 +725,20 @@ const Payments: React.FC = () => {
                     vertical: 'top',
                     horizontal: 'left',
                 }}
-                PaperProps={{
-                    sx: {
-                        p: 3,
-                        minWidth: 300,
-                        borderRadius: 2,
-                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                        mt: 0.5, // Small gap below button
+                anchorReference="anchorEl"
+                disableAutoFocus
+                disableEnforceFocus
+                disableRestoreFocus
+                disableScrollLock
+                slotProps={{
+                    paper: {
+                        sx: {
+                            p: 3,
+                            minWidth: 300,
+                            borderRadius: 2,
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                            mt: 0.5, // Small gap below button
+                        },
                     },
                 }}
             >
@@ -786,15 +824,44 @@ const Payments: React.FC = () => {
                     vertical: 'top',
                     horizontal: 'left',
                 }}
-                PaperProps={{
-                    sx: {
-                        p: 3,
-                        minWidth: 300,
-                        borderRadius: 2,
-                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                        mt: 0.5, // Small gap below button
+                anchorReference="anchorEl"
+                disableAutoFocus
+                disableEnforceFocus
+                disableRestoreFocus
+                disableScrollLock
+                disablePortal
+                slotProps={{
+                    paper: {
+                        sx: {
+                            p: 3,
+                            minWidth: 300,
+                            borderRadius: 2,
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                            mt: 0.5, // Small gap below button
+                        },
+                        ref: (el: HTMLElement | null) => {
+                            if (el) amountFilterPopoverRef.current = el;
+                        },
+                        onMouseDown: e => e.stopPropagation(),
                     },
                 }}
+                modifiers={[
+                    {
+                        name: 'preventOverflow',
+                        enabled: false,
+                    },
+                    {
+                        name: 'flip',
+                        enabled: false,
+                    },
+                    {
+                        name: 'offset',
+                        enabled: true,
+                        options: {
+                            offset: [0, 4],
+                        },
+                    },
+                ]}
             >
                 <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
                     Filter by: amount
@@ -802,9 +869,45 @@ const Payments: React.FC = () => {
                 <Box sx={{ mb: 2 }}>
                     <FormControl fullWidth sx={{ mb: 2 }}>
                         <Select
-                            value={amountOperator}
-                            onChange={e => setAmountOperator(e.target.value)}
+                            value={tempAmountOperator}
+                            onChange={e =>
+                                setTempAmountOperator(e.target.value)
+                            }
                             displayEmpty
+                            onOpen={e => e.stopPropagation()}
+                            onClose={e => e.stopPropagation()}
+                            MenuProps={{
+                                container:
+                                    amountFilterPopoverRef.current ||
+                                    document.body,
+                                disablePortal: true,
+                                disableScrollLock: true,
+                                disableAutoFocusItem: true,
+                                anchorOrigin: {
+                                    vertical: 'bottom',
+                                    horizontal: 'left',
+                                },
+                                transformOrigin: {
+                                    vertical: 'top',
+                                    horizontal: 'left',
+                                },
+                                PaperProps: {
+                                    sx: {
+                                        maxHeight: 300,
+                                    },
+                                    onMouseDown: e => e.stopPropagation(),
+                                },
+                                modifiers: [
+                                    {
+                                        name: 'preventOverflow',
+                                        enabled: false,
+                                    },
+                                    {
+                                        name: 'flip',
+                                        enabled: false,
+                                    },
+                                ],
+                            }}
                         >
                             <MenuItem value="eq">is equal to</MenuItem>
                             <MenuItem value="gt">is greater than</MenuItem>
@@ -860,15 +963,44 @@ const Payments: React.FC = () => {
                     vertical: 'top',
                     horizontal: 'left',
                 }}
-                PaperProps={{
-                    sx: {
-                        p: 3,
-                        minWidth: 300,
-                        borderRadius: 2,
-                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                        mt: 0.5, // Small gap below button
+                anchorReference="anchorEl"
+                disableAutoFocus
+                disableEnforceFocus
+                disableRestoreFocus
+                disableScrollLock
+                disablePortal
+                slotProps={{
+                    paper: {
+                        sx: {
+                            p: 3,
+                            minWidth: 300,
+                            borderRadius: 2,
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                            mt: 0.5, // Small gap below button
+                        },
+                        ref: (el: HTMLElement | null) => {
+                            if (el) currencyFilterPopoverRef.current = el;
+                        },
+                        onMouseDown: e => e.stopPropagation(),
                     },
                 }}
+                modifiers={[
+                    {
+                        name: 'preventOverflow',
+                        enabled: false,
+                    },
+                    {
+                        name: 'flip',
+                        enabled: false,
+                    },
+                    {
+                        name: 'offset',
+                        enabled: true,
+                        options: {
+                            offset: [0, 4],
+                        },
+                    },
+                ]}
             >
                 <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
                     Filter by: currency
@@ -881,6 +1013,40 @@ const Payments: React.FC = () => {
                                 handleCurrencyFilterApply(e.target.value)
                             }
                             displayEmpty
+                            onOpen={e => e.stopPropagation()}
+                            onClose={e => e.stopPropagation()}
+                            MenuProps={{
+                                container:
+                                    currencyFilterPopoverRef.current ||
+                                    document.body,
+                                disablePortal: true,
+                                disableScrollLock: true,
+                                disableAutoFocusItem: true,
+                                anchorOrigin: {
+                                    vertical: 'bottom',
+                                    horizontal: 'left',
+                                },
+                                transformOrigin: {
+                                    vertical: 'top',
+                                    horizontal: 'left',
+                                },
+                                PaperProps: {
+                                    sx: {
+                                        maxHeight: 300,
+                                    },
+                                    onMouseDown: e => e.stopPropagation(),
+                                },
+                                modifiers: [
+                                    {
+                                        name: 'preventOverflow',
+                                        enabled: false,
+                                    },
+                                    {
+                                        name: 'flip',
+                                        enabled: false,
+                                    },
+                                ],
+                            }}
                         >
                             <MenuItem value="all">All currencies</MenuItem>
                             <MenuItem value="usd">USD</MenuItem>
@@ -907,6 +1073,12 @@ const Payments: React.FC = () => {
                     vertical: 'top',
                     horizontal: 'left',
                 }}
+                anchorReference="anchorEl"
+                disableAutoFocus
+                disableEnforceFocus
+                disableRestoreFocus
+                disableScrollLock
+                disablePortal
                 slotProps={{
                     paper: {
                         sx: {
@@ -918,8 +1090,26 @@ const Payments: React.FC = () => {
                             overflow: 'auto',
                             mt: 0.5, // Small gap below button
                         },
+                        onMouseDown: e => e.stopPropagation(),
                     },
                 }}
+                modifiers={[
+                    {
+                        name: 'preventOverflow',
+                        enabled: false,
+                    },
+                    {
+                        name: 'flip',
+                        enabled: false,
+                    },
+                    {
+                        name: 'offset',
+                        enabled: true,
+                        options: {
+                            offset: [0, 4],
+                        },
+                    },
+                ]}
             >
                 <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
                     Filter by: status
@@ -946,7 +1136,7 @@ const Payments: React.FC = () => {
                             onClick={() => handleStatusFilterToggle(status)}
                         >
                             <Checkbox
-                                checked={statusFilter.includes(status)}
+                                checked={tempStatusFilter.includes(status)}
                                 onChange={() =>
                                     handleStatusFilterToggle(status)
                                 }
@@ -988,13 +1178,20 @@ const Payments: React.FC = () => {
                     vertical: 'top',
                     horizontal: 'left',
                 }}
-                PaperProps={{
-                    sx: {
-                        p: 3,
-                        minWidth: 300,
-                        borderRadius: 2,
-                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                        mt: 0.5, // Small gap below button
+                anchorReference="anchorEl"
+                disableAutoFocus
+                disableEnforceFocus
+                disableRestoreFocus
+                disableScrollLock
+                slotProps={{
+                    paper: {
+                        sx: {
+                            p: 3,
+                            minWidth: 300,
+                            borderRadius: 2,
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                            mt: 0.5, // Small gap below button
+                        },
                     },
                 }}
             >
@@ -1052,13 +1249,20 @@ const Payments: React.FC = () => {
                     vertical: 'top',
                     horizontal: 'left',
                 }}
-                PaperProps={{
-                    sx: {
-                        p: 2,
-                        minWidth: 280,
-                        borderRadius: 2,
-                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                        mt: 0.5,
+                anchorReference="anchorEl"
+                disableAutoFocus
+                disableEnforceFocus
+                disableRestoreFocus
+                disableScrollLock
+                slotProps={{
+                    paper: {
+                        sx: {
+                            p: 2,
+                            minWidth: 280,
+                            borderRadius: 2,
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                            mt: 0.5,
+                        },
                     },
                 }}
             >
@@ -1136,13 +1340,20 @@ const Payments: React.FC = () => {
                     vertical: 'top',
                     horizontal: 'left',
                 }}
-                PaperProps={{
-                    sx: {
-                        p: 3,
-                        minWidth: 300,
-                        borderRadius: 2,
-                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                        mt: 0.5,
+                anchorReference="anchorEl"
+                disableAutoFocus
+                disableEnforceFocus
+                disableRestoreFocus
+                disableScrollLock
+                slotProps={{
+                    paper: {
+                        sx: {
+                            p: 3,
+                            minWidth: 300,
+                            borderRadius: 2,
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                            mt: 0.5,
+                        },
                     },
                 }}
             >
@@ -1185,13 +1396,20 @@ const Payments: React.FC = () => {
                     vertical: 'top',
                     horizontal: 'left',
                 }}
-                PaperProps={{
-                    sx: {
-                        p: 3,
-                        minWidth: 300,
-                        borderRadius: 2,
-                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                        mt: 0.5,
+                anchorReference="anchorEl"
+                disableAutoFocus
+                disableEnforceFocus
+                disableRestoreFocus
+                disableScrollLock
+                slotProps={{
+                    paper: {
+                        sx: {
+                            p: 3,
+                            minWidth: 300,
+                            borderRadius: 2,
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                            mt: 0.5,
+                        },
                     },
                 }}
             >
@@ -1235,15 +1453,44 @@ const Payments: React.FC = () => {
                     vertical: 'top',
                     horizontal: 'left',
                 }}
-                PaperProps={{
-                    sx: {
-                        p: 3,
-                        minWidth: 300,
-                        borderRadius: 2,
-                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                        mt: 0.5,
+                anchorReference="anchorEl"
+                disableAutoFocus
+                disableEnforceFocus
+                disableRestoreFocus
+                disableScrollLock
+                disablePortal
+                slotProps={{
+                    paper: {
+                        sx: {
+                            p: 3,
+                            minWidth: 300,
+                            borderRadius: 2,
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                            mt: 0.5,
+                        },
+                        ref: (el: HTMLElement | null) => {
+                            if (el) disputeAmountFilterPopoverRef.current = el;
+                        },
+                        onMouseDown: e => e.stopPropagation(),
                     },
                 }}
+                modifiers={[
+                    {
+                        name: 'preventOverflow',
+                        enabled: false,
+                    },
+                    {
+                        name: 'flip',
+                        enabled: false,
+                    },
+                    {
+                        name: 'offset',
+                        enabled: true,
+                        options: {
+                            offset: [0, 4],
+                        },
+                    },
+                ]}
             >
                 <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
                     Filter by: Dispute amount
@@ -1251,11 +1498,45 @@ const Payments: React.FC = () => {
                 <Box sx={{ mb: 2 }}>
                     <FormControl fullWidth sx={{ mb: 2 }}>
                         <Select
-                            value={disputeAmountOperator}
+                            value={tempDisputeAmountOperator}
                             onChange={e =>
-                                setDisputeAmountOperator(e.target.value)
+                                setTempDisputeAmountOperator(e.target.value)
                             }
                             displayEmpty
+                            onOpen={e => e.stopPropagation()}
+                            onClose={e => e.stopPropagation()}
+                            MenuProps={{
+                                container:
+                                    disputeAmountFilterPopoverRef.current ||
+                                    document.body,
+                                disablePortal: true,
+                                disableScrollLock: true,
+                                disableAutoFocusItem: true,
+                                anchorOrigin: {
+                                    vertical: 'bottom',
+                                    horizontal: 'left',
+                                },
+                                transformOrigin: {
+                                    vertical: 'top',
+                                    horizontal: 'left',
+                                },
+                                PaperProps: {
+                                    sx: {
+                                        maxHeight: 300,
+                                    },
+                                    onMouseDown: e => e.stopPropagation(),
+                                },
+                                modifiers: [
+                                    {
+                                        name: 'preventOverflow',
+                                        enabled: false,
+                                    },
+                                    {
+                                        name: 'flip',
+                                        enabled: false,
+                                    },
+                                ],
+                            }}
                         >
                             <MenuItem value="eq">is equal to</MenuItem>
                             <MenuItem value="gt">is greater than</MenuItem>

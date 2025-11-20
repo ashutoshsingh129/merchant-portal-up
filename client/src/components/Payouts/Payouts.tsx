@@ -152,11 +152,18 @@ const Payouts: React.FC = () => {
     const [amountFilterAnchor, setAmountFilterAnchor] =
         useState<HTMLButtonElement | null>(null);
     const [amountFilterInput, setAmountFilterInput] = useState<string>('0');
+    // Temporary state for popover inputs (doesn't trigger API calls)
+    const [tempAmountOperator, setTempAmountOperator] = useState<string>('eq');
 
     const [statusFilter, setStatusFilter] = useState<string[]>([]);
     const [statusFilterAnchor, setStatusFilterAnchor] =
         useState<HTMLButtonElement | null>(null);
     const statusFilterButtonRef = useRef<HTMLButtonElement | null>(null);
+    // Temporary state for popover checkbox selections (doesn't trigger API calls)
+    const [tempStatusFilter, setTempStatusFilter] = useState<string[]>([]);
+
+    // Refs for Popover containers to fix Select menu positioning
+    const amountFilterPopoverRef = useRef<HTMLElement>(null);
 
     const fetchData = useCallback(async () => {
         try {
@@ -314,6 +321,8 @@ const Payouts: React.FC = () => {
     const handleAmountFilterClick = (
         event: React.MouseEvent<HTMLButtonElement>
     ) => {
+        // Initialize temp state with current values when opening
+        setTempAmountOperator(amountOperator);
         setAmountFilterAnchor(event.currentTarget);
     };
 
@@ -328,6 +337,7 @@ const Payouts: React.FC = () => {
             // Use setTimeout to ensure popover closes before layout shift
             setTimeout(() => {
                 setAmountFilter(amount);
+                setAmountOperator(tempAmountOperator); // Apply temp state to actual state
                 setCurrentPage(1);
                 setPayouts([]);
             }, 0);
@@ -336,6 +346,7 @@ const Payouts: React.FC = () => {
 
     const handleAmountFilterClear = () => {
         setAmountFilter(null);
+        setAmountOperator('eq');
         setAmountFilterInput('0');
         setCurrentPage(1);
         setPayouts([]);
@@ -347,6 +358,8 @@ const Payouts: React.FC = () => {
     ) => {
         const button = event.currentTarget;
         statusFilterButtonRef.current = button;
+        // Initialize temp state with current values when opening
+        setTempStatusFilter([...statusFilter]);
         setStatusFilterAnchor(button);
     };
 
@@ -355,7 +368,8 @@ const Payouts: React.FC = () => {
     };
 
     const handleStatusFilterToggle = (status: string) => {
-        setStatusFilter(prev =>
+        // Update temp state only (doesn't trigger API calls)
+        setTempStatusFilter(prev =>
             prev.includes(status)
                 ? prev.filter(s => s !== status)
                 : [...prev, status]
@@ -366,8 +380,10 @@ const Payouts: React.FC = () => {
         handleStatusFilterClose(); // Close popover first
         // Use setTimeout to ensure popover closes before layout shift
         setTimeout(() => {
+            // Apply temp state to actual state (triggers API call)
+            setStatusFilter([...tempStatusFilter]);
             // Clear selectedSummary when using status filter
-            if (statusFilter.length > 0) {
+            if (tempStatusFilter.length > 0) {
                 setSelectedSummary('all');
             }
             setCurrentPage(1);
@@ -377,6 +393,7 @@ const Payouts: React.FC = () => {
 
     const handleStatusFilterClear = () => {
         setStatusFilter([]);
+        setTempStatusFilter([]);
         setCurrentPage(1);
         setPayouts([]);
     };
@@ -478,9 +495,11 @@ const Payouts: React.FC = () => {
                     vertical: 'top',
                     horizontal: 'left',
                 }}
+                anchorReference="anchorEl"
                 disableAutoFocus
                 disableEnforceFocus
                 disableRestoreFocus
+                disableScrollLock
                 slotProps={{
                     paper: {
                         sx: {
@@ -575,9 +594,12 @@ const Payouts: React.FC = () => {
                     vertical: 'top',
                     horizontal: 'left',
                 }}
+                anchorReference="anchorEl"
                 disableAutoFocus
                 disableEnforceFocus
                 disableRestoreFocus
+                disableScrollLock
+                disablePortal
                 slotProps={{
                     paper: {
                         sx: {
@@ -587,8 +609,29 @@ const Payouts: React.FC = () => {
                             boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
                             mt: 0.5, // Small gap below button
                         },
+                        ref: (el: HTMLElement | null) => {
+                            if (el) amountFilterPopoverRef.current = el;
+                        },
+                        onMouseDown: e => e.stopPropagation(),
                     },
                 }}
+                modifiers={[
+                    {
+                        name: 'preventOverflow',
+                        enabled: false,
+                    },
+                    {
+                        name: 'flip',
+                        enabled: false,
+                    },
+                    {
+                        name: 'offset',
+                        enabled: true,
+                        options: {
+                            offset: [0, 4],
+                        },
+                    },
+                ]}
             >
                 <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
                     Filter by: amount
@@ -596,9 +639,45 @@ const Payouts: React.FC = () => {
                 <Box sx={{ mb: 2 }}>
                     <FormControl fullWidth sx={{ mb: 2 }}>
                         <Select
-                            value={amountOperator}
-                            onChange={e => setAmountOperator(e.target.value)}
+                            value={tempAmountOperator}
+                            onChange={e =>
+                                setTempAmountOperator(e.target.value)
+                            }
                             displayEmpty
+                            onOpen={e => e.stopPropagation()}
+                            onClose={e => e.stopPropagation()}
+                            MenuProps={{
+                                container:
+                                    amountFilterPopoverRef.current ||
+                                    document.body,
+                                disablePortal: true,
+                                disableScrollLock: true,
+                                disableAutoFocusItem: true,
+                                anchorOrigin: {
+                                    vertical: 'bottom',
+                                    horizontal: 'left',
+                                },
+                                transformOrigin: {
+                                    vertical: 'top',
+                                    horizontal: 'left',
+                                },
+                                PaperProps: {
+                                    sx: {
+                                        maxHeight: 300,
+                                    },
+                                    onMouseDown: e => e.stopPropagation(),
+                                },
+                                modifiers: [
+                                    {
+                                        name: 'preventOverflow',
+                                        enabled: false,
+                                    },
+                                    {
+                                        name: 'flip',
+                                        enabled: false,
+                                    },
+                                ],
+                            }}
                         >
                             <MenuItem value="eq">is equal to</MenuItem>
                             <MenuItem value="gt">is greater than</MenuItem>
@@ -658,9 +737,12 @@ const Payouts: React.FC = () => {
                     vertical: 'top',
                     horizontal: 'left',
                 }}
+                anchorReference="anchorEl"
                 disableAutoFocus
                 disableEnforceFocus
                 disableRestoreFocus
+                disableScrollLock
+                disablePortal
                 slotProps={{
                     paper: {
                         sx: {
@@ -672,8 +754,26 @@ const Payouts: React.FC = () => {
                             overflow: 'auto',
                             mt: 0.5, // Small gap below button
                         },
+                        onMouseDown: e => e.stopPropagation(),
                     },
                 }}
+                modifiers={[
+                    {
+                        name: 'preventOverflow',
+                        enabled: false,
+                    },
+                    {
+                        name: 'flip',
+                        enabled: false,
+                    },
+                    {
+                        name: 'offset',
+                        enabled: true,
+                        options: {
+                            offset: [0, 4],
+                        },
+                    },
+                ]}
             >
                 <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
                     Filter by: status
@@ -697,7 +797,7 @@ const Payouts: React.FC = () => {
                             onClick={() => handleStatusFilterToggle(status)}
                         >
                             <Checkbox
-                                checked={statusFilter.includes(status)}
+                                checked={tempStatusFilter.includes(status)}
                                 onChange={() =>
                                     handleStatusFilterToggle(status)
                                 }
