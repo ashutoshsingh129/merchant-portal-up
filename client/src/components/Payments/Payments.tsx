@@ -184,10 +184,61 @@ const Payments: React.FC = () => {
     const [paymentMethodFilter, setPaymentMethodFilter] = useState<
         string | null
     >(null);
+    const [paymentMethodFilterLabel, setPaymentMethodFilterLabel] = useState<
+        string | null
+    >(null);
     const [paymentMethodFilterAnchor, setPaymentMethodFilterAnchor] =
         useState<HTMLButtonElement | null>(null);
     const [paymentMethodFilterInput, setPaymentMethodFilterInput] =
         useState<string>('');
+
+    // Payment method options mapping (display name -> Stripe payment method type)
+    const paymentMethodOptions = [
+        { label: '3D Secure', value: 'card' },
+        { label: '3D Secure 2', value: 'card' },
+        { label: 'ACH Credit Transfer', value: 'ach_credit_transfer' },
+        { label: 'ACH Direct Debit', value: 'ach_debit' },
+        { label: 'Affirm', value: 'affirm' },
+        { label: 'Afterpay / Clearpay', value: 'afterpay_clearpay' },
+        { label: 'Alipay', value: 'alipay' },
+        { label: 'Amazon Pay', value: 'amazon_pay' },
+        { label: 'Amex Express Checkout', value: 'card' },
+        { label: 'Apple Pay', value: 'card' },
+        { label: 'Australia BECS Direct Debit', value: 'au_becs_debit' },
+        { label: 'Bancontact', value: 'bancontact' },
+        { label: 'Bank transfer', value: 'us_bank_account' },
+        { label: 'Canadian pre-authorized debits', value: 'acss_debit' },
+        { label: 'Card', value: 'card' },
+        { label: 'Card Present', value: 'card' },
+        { label: 'Cash App Pay', value: 'cashapp' },
+        { label: 'EPS', value: 'eps' },
+        { label: 'giropay', value: 'giropay' },
+        { label: 'Google Pay', value: 'card' },
+        { label: 'iDEAL', value: 'ideal' },
+        { label: 'Interac', value: 'interac_present' },
+        { label: 'Kakao Pay', value: 'kakao_pay' },
+        { label: 'Klarna', value: 'klarna' },
+        { label: 'Korean cards', value: 'card' },
+        { label: 'Link', value: 'link' },
+        { label: 'Masterpass', value: 'card' },
+        { label: 'MB WAY', value: 'mbway' },
+        { label: 'Meta Pay', value: 'card' },
+        { label: 'MobilePay', value: 'mobilepay' },
+        { label: 'Multibanco', value: 'multibanco' },
+        { label: 'Naver Pay', value: 'naver_pay' },
+        { label: 'P24', value: 'p24' },
+        { label: 'PAYCO', value: 'payco' },
+        { label: 'PayPal', value: 'paypal' },
+        { label: 'Pix', value: 'pix' },
+        { label: 'Samsung Pay', value: 'card' },
+        { label: 'SEPA Direct Debit', value: 'sepa_debit' },
+        { label: 'Sofort', value: 'sofort' },
+        { label: 'Stablecoins and Crypto', value: 'us_bank_account' },
+        { label: 'Stripe balance', value: 'customer_balance' },
+        { label: 'Visa Checkout', value: 'card' },
+        { label: 'WeChat Pay', value: 'wechat_pay' },
+        { label: 'Zip', value: 'zip' },
+    ];
 
     // More filters states
     const [moreFiltersAnchor, setMoreFiltersAnchor] =
@@ -223,6 +274,7 @@ const Payments: React.FC = () => {
     const dateFilterPopoverRef = useRef<HTMLElement>(null);
     const amountFilterPopoverRef = useRef<HTMLElement>(null);
     const currencyFilterPopoverRef = useRef<HTMLElement>(null);
+    const paymentMethodFilterPopoverRef = useRef<HTMLElement>(null);
     const disputeAmountFilterPopoverRef = useRef<HTMLElement>(null);
 
     const fetchData = useCallback(async () => {
@@ -232,7 +284,7 @@ const Payments: React.FC = () => {
 
             // Fetch platform transactions only
             // Use statusFilter if it has values, otherwise use selectedSummary
-            const response = await stripeService.getAllTransactionsFast({
+            const requestParams = {
                 limit: 50, // Smaller batches for faster loading
                 page: currentPage,
                 status:
@@ -247,7 +299,10 @@ const Payments: React.FC = () => {
                     amountFilter !== null ? amountOperator : undefined,
                 currency: currencyFilter || undefined,
                 paymentMethod: paymentMethodFilter || undefined,
-            });
+            };
+
+            const response =
+                await stripeService.getAllTransactionsFast(requestParams);
 
             if (response.success) {
                 // Apply client-side filters for customer ID, email, and dispute amount
@@ -595,11 +650,22 @@ const Payments: React.FC = () => {
         setPaymentMethodFilterAnchor(null);
     };
 
-    const handlePaymentMethodFilterApply = () => {
-        const method = paymentMethodFilterInput.trim();
-        setPaymentMethodFilter(
-            method === '' || method === 'all' ? null : method
-        );
+    const handlePaymentMethodFilterApply = (selectedLabel: string) => {
+        if (selectedLabel === 'all') {
+            setPaymentMethodFilter(null);
+            setPaymentMethodFilterLabel(null);
+            setPaymentMethodFilterInput('');
+        } else {
+            // Find the option by label to get the Stripe payment method type value
+            const selectedOption = paymentMethodOptions.find(
+                opt => opt.label === selectedLabel
+            );
+            if (selectedOption) {
+                setPaymentMethodFilter(selectedOption.value);
+                setPaymentMethodFilterLabel(selectedOption.label);
+                setPaymentMethodFilterInput(selectedOption.label);
+            }
+        }
         setCurrentPage(1);
         setTransactions([]);
         handlePaymentMethodFilterClose();
@@ -607,6 +673,7 @@ const Payments: React.FC = () => {
 
     const handlePaymentMethodFilterClear = () => {
         setPaymentMethodFilter(null);
+        setPaymentMethodFilterLabel(null);
         setPaymentMethodFilterInput('');
         setCurrentPage(1);
         setTransactions([]);
@@ -1420,57 +1487,105 @@ const Payments: React.FC = () => {
                 disableEnforceFocus
                 disableRestoreFocus
                 disableScrollLock
+                disablePortal
                 slotProps={{
                     paper: {
                         sx: {
                             p: 3,
                             minWidth: 300,
+                            maxHeight: 400,
                             borderRadius: 2,
                             boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
                             mt: 0.5, // Small gap below button
                         },
+                        ref: (el: HTMLElement | null) => {
+                            if (el) paymentMethodFilterPopoverRef.current = el;
+                        },
+                        onMouseDown: e => e.stopPropagation(),
                     },
                 }}
+                modifiers={[
+                    {
+                        name: 'preventOverflow',
+                        enabled: false,
+                    },
+                    {
+                        name: 'flip',
+                        enabled: false,
+                    },
+                    {
+                        name: 'offset',
+                        enabled: true,
+                        options: {
+                            offset: [0, 4],
+                        },
+                    },
+                ]}
             >
                 <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
                     Filter by: payment method
                 </Typography>
                 <Box sx={{ mb: 2 }}>
-                    <TextField
-                        value={paymentMethodFilterInput}
-                        onChange={e =>
-                            setPaymentMethodFilterInput(e.target.value)
-                        }
-                        placeholder="Card"
-                        fullWidth
-                        InputProps={{
-                            endAdornment: (
-                                <InputAdornment position="end">
-                                    <ArrowDropDown />
-                                </InputAdornment>
-                            ),
-                        }}
-                    />
-                    <Typography
-                        variant="body2"
-                        sx={{ mt: 1, color: '#6b7280' }}
-                    >
-                        Common: card, bank_account, us_bank_account
-                    </Typography>
+                    <FormControl fullWidth>
+                        <Select
+                            value={paymentMethodFilterLabel || 'all'}
+                            onChange={e =>
+                                handlePaymentMethodFilterApply(e.target.value)
+                            }
+                            displayEmpty
+                            renderValue={selected => {
+                                if (selected === 'all' || !selected) {
+                                    return 'All payment methods';
+                                }
+                                return selected;
+                            }}
+                            onOpen={e => e.stopPropagation()}
+                            onClose={e => e.stopPropagation()}
+                            MenuProps={{
+                                container:
+                                    paymentMethodFilterPopoverRef.current ||
+                                    document.body,
+                                disablePortal: true,
+                                disableScrollLock: true,
+                                disableAutoFocusItem: true,
+                                anchorOrigin: {
+                                    vertical: 'bottom',
+                                    horizontal: 'left',
+                                },
+                                transformOrigin: {
+                                    vertical: 'top',
+                                    horizontal: 'left',
+                                },
+                                PaperProps: {
+                                    sx: {
+                                        maxHeight: 300,
+                                    },
+                                    onMouseDown: e => e.stopPropagation(),
+                                },
+                                modifiers: [
+                                    {
+                                        name: 'preventOverflow',
+                                        enabled: false,
+                                    },
+                                    {
+                                        name: 'flip',
+                                        enabled: false,
+                                    },
+                                ],
+                            }}
+                        >
+                            <MenuItem value="all">All payment methods</MenuItem>
+                            {paymentMethodOptions.map(option => (
+                                <MenuItem
+                                    key={option.label}
+                                    value={option.label}
+                                >
+                                    {option.label}
+                                </MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
                 </Box>
-                <Button
-                    variant="contained"
-                    fullWidth
-                    onClick={handlePaymentMethodFilterApply}
-                    sx={{
-                        backgroundColor: '#7c3aed',
-                        '&:hover': { backgroundColor: '#6d28d9' },
-                        textTransform: 'none',
-                        py: 1.5,
-                    }}
-                >
-                    Apply
-                </Button>
             </Popover>
 
             {/* More Filters Popover */}
@@ -2052,7 +2167,7 @@ const Payments: React.FC = () => {
                 </Button>
                 {paymentMethodFilter && (
                     <Chip
-                        label={paymentMethodFilter}
+                        label={paymentMethodFilterLabel || paymentMethodFilter}
                         onDelete={handlePaymentMethodFilterClear}
                         color="primary"
                         sx={{ backgroundColor: '#7c3aed' }}

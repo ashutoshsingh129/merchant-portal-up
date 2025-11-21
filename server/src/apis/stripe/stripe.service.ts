@@ -838,9 +838,16 @@ export class StripeService {
       }
 
       // Apply payment method filter if provided
+      // Note: Stripe's PaymentIntent.list() and Charge.list() APIs don't support filtering by payment method type
+      // So we fetch all transactions and filter them here on the backend
       if (params?.paymentMethod && params.paymentMethod !== 'all') {
         filteredTransactions = filteredTransactions.filter((transaction: any) => {
-          return transaction.payment_method?.type === params.paymentMethod;
+          const transactionPaymentMethodType = transaction.payment_method?.type;
+          // Case-insensitive matching
+          if (!transactionPaymentMethodType) {
+            return false;
+          }
+          return transactionPaymentMethodType.toLowerCase() === params.paymentMethod.toLowerCase();
         });
         console.log(
           `Filtered by payment method '${params.paymentMethod}': ${filteredTransactions.length} transactions`,
