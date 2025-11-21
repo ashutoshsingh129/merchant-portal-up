@@ -270,12 +270,76 @@ const Payments: React.FC = () => {
     const [tempDisputeAmountOperator, setTempDisputeAmountOperator] =
         useState<string>('eq');
 
+    // New filter states for additional filters
+    const [cardBrandFilter, setCardBrandFilter] = useState<string | null>(null);
+    const [cardBrandFilterAnchor, setCardBrandFilterAnchor] =
+        useState<HTMLButtonElement | null>(null);
+
+    const [declineReasonFilter, setDeclineReasonFilter] = useState<
+        string | null
+    >(null);
+    const [declineReasonFilterAnchor, setDeclineReasonFilterAnchor] =
+        useState<HTMLButtonElement | null>(null);
+    const [declineReasonFilterInput, setDeclineReasonFilterInput] =
+        useState<string>('');
+
+    const [last4DigitsFilter, setLast4DigitsFilter] = useState<string | null>(
+        null
+    );
+    const [last4DigitsFilterAnchor, setLast4DigitsFilterAnchor] =
+        useState<HTMLButtonElement | null>(null);
+    const [last4DigitsFilterInput, setLast4DigitsFilterInput] =
+        useState<string>('');
+
+    const [disputedOnFilter, setDisputedOnFilter] = useState<number | null>(
+        null
+    );
+    const [disputedOnFilterAnchor, setDisputedOnFilterAnchor] =
+        useState<HTMLButtonElement | null>(null);
+    const [disputedOnFilterInput, setDisputedOnFilterInput] =
+        useState<string>('');
+
+    const [disputeReasonFilter, setDisputeReasonFilter] = useState<
+        string | null
+    >(null);
+    const [disputeReasonFilterAnchor, setDisputeReasonFilterAnchor] =
+        useState<HTMLButtonElement | null>(null);
+    const [disputeReasonFilterInput, setDisputeReasonFilterInput] =
+        useState<string>('');
+
+    const [evidenceDueByFilter, setEvidenceDueByFilter] = useState<
+        number | null
+    >(null);
+    const [evidenceDueByFilterAnchor, setEvidenceDueByFilterAnchor] =
+        useState<HTMLButtonElement | null>(null);
+    const [evidenceDueByFilterInput, setEvidenceDueByFilterInput] =
+        useState<string>('');
+
+    const [evidenceSubmittedAtFilter, setEvidenceSubmittedAtFilter] = useState<
+        number | null
+    >(null);
+    const [
+        evidenceSubmittedAtFilterAnchor,
+        setEvidenceSubmittedAtFilterAnchor,
+    ] = useState<HTMLButtonElement | null>(null);
+    const [evidenceSubmittedAtFilterInput, setEvidenceSubmittedAtFilterInput] =
+        useState<string>('');
+
+    const [transferredToFilter, setTransferredToFilter] = useState<
+        string | null
+    >(null);
+    const [transferredToFilterAnchor, setTransferredToFilterAnchor] =
+        useState<HTMLButtonElement | null>(null);
+    const [transferredToFilterInput, setTransferredToFilterInput] =
+        useState<string>('');
+
     // Refs for Popover containers to fix Select menu positioning
     const dateFilterPopoverRef = useRef<HTMLElement>(null);
     const amountFilterPopoverRef = useRef<HTMLElement>(null);
     const currencyFilterPopoverRef = useRef<HTMLElement>(null);
     const paymentMethodFilterPopoverRef = useRef<HTMLElement>(null);
     const disputeAmountFilterPopoverRef = useRef<HTMLElement>(null);
+    const cardBrandFilterPopoverRef = useRef<HTMLElement>(null);
 
     const fetchData = useCallback(async () => {
         try {
@@ -428,6 +492,119 @@ const Payments: React.FC = () => {
                     );
                 }
 
+                // Apply card brand filter
+                if (cardBrandFilter) {
+                    filteredTransactions = filteredTransactions.filter(
+                        (transaction: StripeTransaction) => {
+                            return (
+                                transaction.payment_method?.card?.brand?.toLowerCase() ===
+                                cardBrandFilter.toLowerCase()
+                            );
+                        }
+                    );
+                }
+
+                // Apply decline reason filter
+                if (declineReasonFilter) {
+                    filteredTransactions = filteredTransactions.filter(
+                        (transaction: StripeTransaction) => {
+                            return transaction.decline_reason
+                                ?.toLowerCase()
+                                .includes(declineReasonFilter.toLowerCase());
+                        }
+                    );
+                }
+
+                // Apply last 4 digits filter
+                if (last4DigitsFilter) {
+                    filteredTransactions = filteredTransactions.filter(
+                        (transaction: StripeTransaction) => {
+                            return (
+                                transaction.payment_method?.card?.last4 ===
+                                last4DigitsFilter
+                            );
+                        }
+                    );
+                }
+
+                // Apply disputed on filter
+                if (disputedOnFilter !== null) {
+                    const filterDateStart = disputedOnFilter;
+                    const filterDateEnd = disputedOnFilter + 86400; // Add 24 hours
+                    filteredTransactions = filteredTransactions.filter(
+                        (transaction: StripeTransaction) => {
+                            const disputedOn = (transaction as any).disputed_on;
+                            if (!disputedOn) return false;
+                            return (
+                                disputedOn >= filterDateStart &&
+                                disputedOn < filterDateEnd
+                            );
+                        }
+                    );
+                }
+
+                // Apply dispute reason filter
+                if (disputeReasonFilter) {
+                    filteredTransactions = filteredTransactions.filter(
+                        (transaction: StripeTransaction) => {
+                            const disputeReason = (transaction as any)
+                                .dispute_reason;
+                            if (!disputeReason) return false;
+                            return disputeReason
+                                .toLowerCase()
+                                .includes(disputeReasonFilter.toLowerCase());
+                        }
+                    );
+                }
+
+                // Apply evidence due by filter
+                if (evidenceDueByFilter !== null) {
+                    const filterDateStart = evidenceDueByFilter;
+                    const filterDateEnd = evidenceDueByFilter + 86400; // Add 24 hours
+                    filteredTransactions = filteredTransactions.filter(
+                        (transaction: StripeTransaction) => {
+                            const evidenceDueBy = (transaction as any)
+                                .evidence_due_by;
+                            if (!evidenceDueBy) return false;
+                            return (
+                                evidenceDueBy >= filterDateStart &&
+                                evidenceDueBy < filterDateEnd
+                            );
+                        }
+                    );
+                }
+
+                // Apply evidence submitted at filter
+                if (evidenceSubmittedAtFilter !== null) {
+                    const filterDateStart = evidenceSubmittedAtFilter;
+                    const filterDateEnd = evidenceSubmittedAtFilter + 86400; // Add 24 hours
+                    filteredTransactions = filteredTransactions.filter(
+                        (transaction: StripeTransaction) => {
+                            const evidenceSubmittedAt = (transaction as any)
+                                .evidence_submitted_at;
+                            if (!evidenceSubmittedAt) return false;
+                            return (
+                                evidenceSubmittedAt >= filterDateStart &&
+                                evidenceSubmittedAt < filterDateEnd
+                            );
+                        }
+                    );
+                }
+
+                // Apply transferred to filter
+                if (transferredToFilter) {
+                    filteredTransactions = filteredTransactions.filter(
+                        (transaction: StripeTransaction) => {
+                            const transferredTo = (transaction as any)
+                                .transferred_to;
+                            if (!transferredTo) return false;
+                            return transferredTo
+                                .toLowerCase()
+                                .includes(transferredToFilter.toLowerCase());
+                        }
+                    );
+                }
+
                 // Always replace data to avoid duplicates
                 // Backend handles pagination, so we just show what it returns
                 setTransactions(filteredTransactions);
@@ -460,6 +637,14 @@ const Payments: React.FC = () => {
         emailFilter,
         disputeAmountFilter,
         disputeAmountOperator,
+        cardBrandFilter,
+        declineReasonFilter,
+        last4DigitsFilter,
+        disputedOnFilter,
+        disputeReasonFilter,
+        evidenceDueByFilter,
+        evidenceSubmittedAtFilter,
+        transferredToFilter,
     ]);
 
     useEffect(() => {
@@ -782,6 +967,243 @@ const Payments: React.FC = () => {
         setDisputeAmountFilter(null);
         setDisputeAmountOperator('eq');
         setDisputeAmountFilterInput('0');
+        setCurrentPage(1);
+        setTransactions([]);
+    };
+
+    // Card brand filter handlers
+    const handleCardBrandFilterOpen = () => {
+        const anchor = moreFiltersAnchor;
+        setMoreFiltersAnchor(null);
+        setTimeout(() => {
+            setCardBrandFilterAnchor(anchor);
+        }, 100);
+    };
+
+    const handleCardBrandFilterClose = () => {
+        setCardBrandFilterAnchor(null);
+    };
+
+    const handleCardBrandFilterApply = (brand: string) => {
+        setCardBrandFilter(brand === 'all' ? null : brand);
+        setCurrentPage(1);
+        setTransactions([]);
+        handleCardBrandFilterClose();
+    };
+
+    const handleCardBrandFilterClear = () => {
+        setCardBrandFilter(null);
+        setCurrentPage(1);
+        setTransactions([]);
+    };
+
+    // Decline reason filter handlers
+    const handleDeclineReasonFilterOpen = () => {
+        const anchor = moreFiltersAnchor;
+        setMoreFiltersAnchor(null);
+        setTimeout(() => {
+            setDeclineReasonFilterAnchor(anchor);
+        }, 100);
+    };
+
+    const handleDeclineReasonFilterClose = () => {
+        setDeclineReasonFilterAnchor(null);
+    };
+
+    const handleDeclineReasonFilterApply = () => {
+        const reason = declineReasonFilterInput.trim();
+        setDeclineReasonFilter(reason === '' ? null : reason);
+        setCurrentPage(1);
+        setTransactions([]);
+        handleDeclineReasonFilterClose();
+    };
+
+    const handleDeclineReasonFilterClear = () => {
+        setDeclineReasonFilter(null);
+        setDeclineReasonFilterInput('');
+        setCurrentPage(1);
+        setTransactions([]);
+    };
+
+    // Last 4 digits filter handlers
+    const handleLast4DigitsFilterOpen = () => {
+        const anchor = moreFiltersAnchor;
+        setMoreFiltersAnchor(null);
+        setTimeout(() => {
+            setLast4DigitsFilterAnchor(anchor);
+        }, 100);
+    };
+
+    const handleLast4DigitsFilterClose = () => {
+        setLast4DigitsFilterAnchor(null);
+    };
+
+    const handleLast4DigitsFilterApply = () => {
+        const digits = last4DigitsFilterInput.trim();
+        setLast4DigitsFilter(digits === '' ? null : digits);
+        setCurrentPage(1);
+        setTransactions([]);
+        handleLast4DigitsFilterClose();
+    };
+
+    const handleLast4DigitsFilterClear = () => {
+        setLast4DigitsFilter(null);
+        setLast4DigitsFilterInput('');
+        setCurrentPage(1);
+        setTransactions([]);
+    };
+
+    // Disputed on filter handlers
+    const handleDisputedOnFilterOpen = () => {
+        const anchor = moreFiltersAnchor;
+        setMoreFiltersAnchor(null);
+        setTimeout(() => {
+            setDisputedOnFilterAnchor(anchor);
+        }, 100);
+    };
+
+    const handleDisputedOnFilterClose = () => {
+        setDisputedOnFilterAnchor(null);
+    };
+
+    const handleDisputedOnFilterApply = () => {
+        if (disputedOnFilterInput) {
+            const date = new Date(disputedOnFilterInput);
+            date.setHours(0, 0, 0, 0);
+            setDisputedOnFilter(Math.floor(date.getTime() / 1000));
+        } else {
+            setDisputedOnFilter(null);
+        }
+        setCurrentPage(1);
+        setTransactions([]);
+        handleDisputedOnFilterClose();
+    };
+
+    const handleDisputedOnFilterClear = () => {
+        setDisputedOnFilter(null);
+        setDisputedOnFilterInput('');
+        setCurrentPage(1);
+        setTransactions([]);
+    };
+
+    // Dispute reason filter handlers
+    const handleDisputeReasonFilterOpen = () => {
+        const anchor = moreFiltersAnchor;
+        setMoreFiltersAnchor(null);
+        setTimeout(() => {
+            setDisputeReasonFilterAnchor(anchor);
+        }, 100);
+    };
+
+    const handleDisputeReasonFilterClose = () => {
+        setDisputeReasonFilterAnchor(null);
+    };
+
+    const handleDisputeReasonFilterApply = () => {
+        const reason = disputeReasonFilterInput.trim();
+        setDisputeReasonFilter(reason === '' ? null : reason);
+        setCurrentPage(1);
+        setTransactions([]);
+        handleDisputeReasonFilterClose();
+    };
+
+    const handleDisputeReasonFilterClear = () => {
+        setDisputeReasonFilter(null);
+        setDisputeReasonFilterInput('');
+        setCurrentPage(1);
+        setTransactions([]);
+    };
+
+    // Evidence due by filter handlers
+    const handleEvidenceDueByFilterOpen = () => {
+        const anchor = moreFiltersAnchor;
+        setMoreFiltersAnchor(null);
+        setTimeout(() => {
+            setEvidenceDueByFilterAnchor(anchor);
+        }, 100);
+    };
+
+    const handleEvidenceDueByFilterClose = () => {
+        setEvidenceDueByFilterAnchor(null);
+    };
+
+    const handleEvidenceDueByFilterApply = () => {
+        if (evidenceDueByFilterInput) {
+            const date = new Date(evidenceDueByFilterInput);
+            date.setHours(0, 0, 0, 0);
+            setEvidenceDueByFilter(Math.floor(date.getTime() / 1000));
+        } else {
+            setEvidenceDueByFilter(null);
+        }
+        setCurrentPage(1);
+        setTransactions([]);
+        handleEvidenceDueByFilterClose();
+    };
+
+    const handleEvidenceDueByFilterClear = () => {
+        setEvidenceDueByFilter(null);
+        setEvidenceDueByFilterInput('');
+        setCurrentPage(1);
+        setTransactions([]);
+    };
+
+    // Evidence submitted at filter handlers
+    const handleEvidenceSubmittedAtFilterOpen = () => {
+        const anchor = moreFiltersAnchor;
+        setMoreFiltersAnchor(null);
+        setTimeout(() => {
+            setEvidenceSubmittedAtFilterAnchor(anchor);
+        }, 100);
+    };
+
+    const handleEvidenceSubmittedAtFilterClose = () => {
+        setEvidenceSubmittedAtFilterAnchor(null);
+    };
+
+    const handleEvidenceSubmittedAtFilterApply = () => {
+        if (evidenceSubmittedAtFilterInput) {
+            const date = new Date(evidenceSubmittedAtFilterInput);
+            date.setHours(0, 0, 0, 0);
+            setEvidenceSubmittedAtFilter(Math.floor(date.getTime() / 1000));
+        } else {
+            setEvidenceSubmittedAtFilter(null);
+        }
+        setCurrentPage(1);
+        setTransactions([]);
+        handleEvidenceSubmittedAtFilterClose();
+    };
+
+    const handleEvidenceSubmittedAtFilterClear = () => {
+        setEvidenceSubmittedAtFilter(null);
+        setEvidenceSubmittedAtFilterInput('');
+        setCurrentPage(1);
+        setTransactions([]);
+    };
+
+    // Transferred to filter handlers
+    const handleTransferredToFilterOpen = () => {
+        const anchor = moreFiltersAnchor;
+        setMoreFiltersAnchor(null);
+        setTimeout(() => {
+            setTransferredToFilterAnchor(anchor);
+        }, 100);
+    };
+
+    const handleTransferredToFilterClose = () => {
+        setTransferredToFilterAnchor(null);
+    };
+
+    const handleTransferredToFilterApply = () => {
+        const transferredTo = transferredToFilterInput.trim();
+        setTransferredToFilter(transferredTo === '' ? null : transferredTo);
+        setCurrentPage(1);
+        setTransactions([]);
+        handleTransferredToFilterClose();
+    };
+
+    const handleTransferredToFilterClear = () => {
+        setTransferredToFilter(null);
+        setTransferredToFilterInput('');
         setCurrentPage(1);
         setTransactions([]);
     };
@@ -1676,6 +2098,144 @@ const Payments: React.FC = () => {
                         <Typography variant="body2">Dispute amount</Typography>
                         <Add sx={{ fontSize: 18, color: '#6b7280' }} />
                     </Box>
+                    <Box
+                        onClick={handleCardBrandFilterOpen}
+                        sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            p: 1.5,
+                            cursor: 'pointer',
+                            borderRadius: 1,
+                            '&:hover': {
+                                backgroundColor: '#f3f4f6',
+                            },
+                        }}
+                    >
+                        <Typography variant="body2">Card brand</Typography>
+                        <Add sx={{ fontSize: 18, color: '#6b7280' }} />
+                    </Box>
+                    <Box
+                        onClick={handleDeclineReasonFilterOpen}
+                        sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            p: 1.5,
+                            cursor: 'pointer',
+                            borderRadius: 1,
+                            '&:hover': {
+                                backgroundColor: '#f3f4f6',
+                            },
+                        }}
+                    >
+                        <Typography variant="body2">Decline reason</Typography>
+                        <Add sx={{ fontSize: 18, color: '#6b7280' }} />
+                    </Box>
+                    <Box
+                        onClick={handleLast4DigitsFilterOpen}
+                        sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            p: 1.5,
+                            cursor: 'pointer',
+                            borderRadius: 1,
+                            '&:hover': {
+                                backgroundColor: '#f3f4f6',
+                            },
+                        }}
+                    >
+                        <Typography variant="body2">Last 4 digits</Typography>
+                        <Add sx={{ fontSize: 18, color: '#6b7280' }} />
+                    </Box>
+                    <Box
+                        onClick={handleDisputedOnFilterOpen}
+                        sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            p: 1.5,
+                            cursor: 'pointer',
+                            borderRadius: 1,
+                            '&:hover': {
+                                backgroundColor: '#f3f4f6',
+                            },
+                        }}
+                    >
+                        <Typography variant="body2">Disputed on</Typography>
+                        <Add sx={{ fontSize: 18, color: '#6b7280' }} />
+                    </Box>
+                    <Box
+                        onClick={handleDisputeReasonFilterOpen}
+                        sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            p: 1.5,
+                            cursor: 'pointer',
+                            borderRadius: 1,
+                            '&:hover': {
+                                backgroundColor: '#f3f4f6',
+                            },
+                        }}
+                    >
+                        <Typography variant="body2">Dispute reason</Typography>
+                        <Add sx={{ fontSize: 18, color: '#6b7280' }} />
+                    </Box>
+                    <Box
+                        onClick={handleEvidenceDueByFilterOpen}
+                        sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            p: 1.5,
+                            cursor: 'pointer',
+                            borderRadius: 1,
+                            '&:hover': {
+                                backgroundColor: '#f3f4f6',
+                            },
+                        }}
+                    >
+                        <Typography variant="body2">Evidence due by</Typography>
+                        <Add sx={{ fontSize: 18, color: '#6b7280' }} />
+                    </Box>
+                    <Box
+                        onClick={handleEvidenceSubmittedAtFilterOpen}
+                        sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            p: 1.5,
+                            cursor: 'pointer',
+                            borderRadius: 1,
+                            '&:hover': {
+                                backgroundColor: '#f3f4f6',
+                            },
+                        }}
+                    >
+                        <Typography variant="body2">
+                            Evidence submitted at
+                        </Typography>
+                        <Add sx={{ fontSize: 18, color: '#6b7280' }} />
+                    </Box>
+                    <Box
+                        onClick={handleTransferredToFilterOpen}
+                        sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            p: 1.5,
+                            cursor: 'pointer',
+                            borderRadius: 1,
+                            '&:hover': {
+                                backgroundColor: '#f3f4f6',
+                            },
+                        }}
+                    >
+                        <Typography variant="body2">Transferred to</Typography>
+                        <Add sx={{ fontSize: 18, color: '#6b7280' }} />
+                    </Box>
                 </Box>
             </Popover>
 
@@ -1933,6 +2493,539 @@ const Payments: React.FC = () => {
                 </Button>
             </Popover>
 
+            {/* Card Brand Filter Popover */}
+            <Popover
+                open={Boolean(cardBrandFilterAnchor)}
+                anchorEl={cardBrandFilterAnchor}
+                onClose={handleCardBrandFilterClose}
+                anchorOrigin={{
+                    vertical: 'bottom',
+                    horizontal: 'left',
+                }}
+                transformOrigin={{
+                    vertical: 'top',
+                    horizontal: 'left',
+                }}
+                anchorReference="anchorEl"
+                disableAutoFocus
+                disableEnforceFocus
+                disableRestoreFocus
+                disableScrollLock
+                disablePortal
+                slotProps={{
+                    paper: {
+                        sx: {
+                            p: 3,
+                            minWidth: 300,
+                            maxHeight: 400,
+                            borderRadius: 2,
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                            mt: 0.5,
+                        },
+                        ref: (el: HTMLElement | null) => {
+                            if (el) cardBrandFilterPopoverRef.current = el;
+                        },
+                        onMouseDown: e => e.stopPropagation(),
+                    },
+                }}
+                modifiers={[
+                    {
+                        name: 'preventOverflow',
+                        enabled: false,
+                    },
+                    {
+                        name: 'flip',
+                        enabled: false,
+                    },
+                    {
+                        name: 'offset',
+                        enabled: true,
+                        options: {
+                            offset: [0, 4],
+                        },
+                    },
+                ]}
+            >
+                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                    Filter by: card brand
+                </Typography>
+                <Box sx={{ mb: 2 }}>
+                    <FormControl fullWidth>
+                        <Select
+                            value={cardBrandFilter || 'all'}
+                            onChange={e =>
+                                handleCardBrandFilterApply(e.target.value)
+                            }
+                            displayEmpty
+                            onOpen={e => e.stopPropagation()}
+                            onClose={e => e.stopPropagation()}
+                            MenuProps={{
+                                container:
+                                    cardBrandFilterPopoverRef.current ||
+                                    document.body,
+                                disablePortal: true,
+                                disableScrollLock: true,
+                                disableAutoFocusItem: true,
+                                anchorOrigin: {
+                                    vertical: 'bottom',
+                                    horizontal: 'left',
+                                },
+                                transformOrigin: {
+                                    vertical: 'top',
+                                    horizontal: 'left',
+                                },
+                                PaperProps: {
+                                    sx: {
+                                        maxHeight: 300,
+                                    },
+                                    onMouseDown: e => e.stopPropagation(),
+                                },
+                                modifiers: [
+                                    {
+                                        name: 'preventOverflow',
+                                        enabled: false,
+                                    },
+                                    {
+                                        name: 'flip',
+                                        enabled: false,
+                                    },
+                                ],
+                            }}
+                        >
+                            <MenuItem value="all">All card brands</MenuItem>
+                            <MenuItem value="amex">American Express</MenuItem>
+                            <MenuItem value="cartes_bancaires">
+                                Cartes Bancaires
+                            </MenuItem>
+                            <MenuItem value="diners">Diners Club</MenuItem>
+                            <MenuItem value="discover">Discover</MenuItem>
+                            <MenuItem value="eftpos_au">
+                                eftpos Australia
+                            </MenuItem>
+                            <MenuItem value="jcb">JCB</MenuItem>
+                            <MenuItem value="link">Link</MenuItem>
+                            <MenuItem value="mastercard">MasterCard</MenuItem>
+                            <MenuItem value="unionpay">UnionPay</MenuItem>
+                            <MenuItem value="visa">Visa</MenuItem>
+                        </Select>
+                    </FormControl>
+                </Box>
+            </Popover>
+
+            {/* Decline Reason Filter Popover */}
+            <Popover
+                open={Boolean(declineReasonFilterAnchor)}
+                anchorEl={declineReasonFilterAnchor}
+                onClose={handleDeclineReasonFilterClose}
+                anchorOrigin={{
+                    vertical: 'bottom',
+                    horizontal: 'left',
+                }}
+                transformOrigin={{
+                    vertical: 'top',
+                    horizontal: 'left',
+                }}
+                anchorReference="anchorEl"
+                disableAutoFocus
+                disableEnforceFocus
+                disableRestoreFocus
+                disableScrollLock
+                slotProps={{
+                    paper: {
+                        sx: {
+                            p: 3,
+                            minWidth: 300,
+                            borderRadius: 2,
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                            mt: 0.5,
+                        },
+                    },
+                }}
+            >
+                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                    Filter by: Decline reason
+                </Typography>
+                <Box sx={{ mb: 2 }}>
+                    <TextField
+                        value={declineReasonFilterInput}
+                        onChange={e =>
+                            setDeclineReasonFilterInput(e.target.value)
+                        }
+                        placeholder="Enter decline reason"
+                        fullWidth
+                    />
+                </Box>
+                <Button
+                    variant="contained"
+                    fullWidth
+                    onClick={handleDeclineReasonFilterApply}
+                    sx={{
+                        backgroundColor: '#7c3aed',
+                        '&:hover': { backgroundColor: '#6d28d9' },
+                        textTransform: 'none',
+                        py: 1.5,
+                    }}
+                >
+                    Apply
+                </Button>
+            </Popover>
+
+            {/* Last 4 Digits Filter Popover */}
+            <Popover
+                open={Boolean(last4DigitsFilterAnchor)}
+                anchorEl={last4DigitsFilterAnchor}
+                onClose={handleLast4DigitsFilterClose}
+                anchorOrigin={{
+                    vertical: 'bottom',
+                    horizontal: 'left',
+                }}
+                transformOrigin={{
+                    vertical: 'top',
+                    horizontal: 'left',
+                }}
+                anchorReference="anchorEl"
+                disableAutoFocus
+                disableEnforceFocus
+                disableRestoreFocus
+                disableScrollLock
+                slotProps={{
+                    paper: {
+                        sx: {
+                            p: 3,
+                            minWidth: 300,
+                            borderRadius: 2,
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                            mt: 0.5,
+                        },
+                    },
+                }}
+            >
+                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                    Filter by: Last 4 digits
+                </Typography>
+                <Box sx={{ mb: 2 }}>
+                    <TextField
+                        value={last4DigitsFilterInput}
+                        onChange={e =>
+                            setLast4DigitsFilterInput(e.target.value)
+                        }
+                        placeholder="4242"
+                        fullWidth
+                        inputProps={{ maxLength: 4 }}
+                    />
+                </Box>
+                <Button
+                    variant="contained"
+                    fullWidth
+                    onClick={handleLast4DigitsFilterApply}
+                    sx={{
+                        backgroundColor: '#7c3aed',
+                        '&:hover': { backgroundColor: '#6d28d9' },
+                        textTransform: 'none',
+                        py: 1.5,
+                    }}
+                >
+                    Apply
+                </Button>
+            </Popover>
+
+            {/* Disputed On Filter Popover */}
+            <Popover
+                open={Boolean(disputedOnFilterAnchor)}
+                anchorEl={disputedOnFilterAnchor}
+                onClose={handleDisputedOnFilterClose}
+                anchorOrigin={{
+                    vertical: 'bottom',
+                    horizontal: 'left',
+                }}
+                transformOrigin={{
+                    vertical: 'top',
+                    horizontal: 'left',
+                }}
+                anchorReference="anchorEl"
+                disableAutoFocus
+                disableEnforceFocus
+                disableRestoreFocus
+                disableScrollLock
+                slotProps={{
+                    paper: {
+                        sx: {
+                            p: 3,
+                            minWidth: 300,
+                            borderRadius: 2,
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                            mt: 0.5,
+                        },
+                    },
+                }}
+            >
+                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                    Filter by: Disputed on
+                </Typography>
+                <Box sx={{ mb: 2 }}>
+                    <TextField
+                        type="date"
+                        value={disputedOnFilterInput}
+                        onChange={e => setDisputedOnFilterInput(e.target.value)}
+                        fullWidth
+                        InputLabelProps={{
+                            shrink: true,
+                        }}
+                    />
+                </Box>
+                <Button
+                    variant="contained"
+                    fullWidth
+                    onClick={handleDisputedOnFilterApply}
+                    sx={{
+                        backgroundColor: '#7c3aed',
+                        '&:hover': { backgroundColor: '#6d28d9' },
+                        textTransform: 'none',
+                        py: 1.5,
+                    }}
+                >
+                    Apply
+                </Button>
+            </Popover>
+
+            {/* Dispute Reason Filter Popover */}
+            <Popover
+                open={Boolean(disputeReasonFilterAnchor)}
+                anchorEl={disputeReasonFilterAnchor}
+                onClose={handleDisputeReasonFilterClose}
+                anchorOrigin={{
+                    vertical: 'bottom',
+                    horizontal: 'left',
+                }}
+                transformOrigin={{
+                    vertical: 'top',
+                    horizontal: 'left',
+                }}
+                anchorReference="anchorEl"
+                disableAutoFocus
+                disableEnforceFocus
+                disableRestoreFocus
+                disableScrollLock
+                slotProps={{
+                    paper: {
+                        sx: {
+                            p: 3,
+                            minWidth: 300,
+                            borderRadius: 2,
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                            mt: 0.5,
+                        },
+                    },
+                }}
+            >
+                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                    Filter by: Dispute reason
+                </Typography>
+                <Box sx={{ mb: 2 }}>
+                    <TextField
+                        value={disputeReasonFilterInput}
+                        onChange={e =>
+                            setDisputeReasonFilterInput(e.target.value)
+                        }
+                        placeholder="Enter dispute reason"
+                        fullWidth
+                    />
+                </Box>
+                <Button
+                    variant="contained"
+                    fullWidth
+                    onClick={handleDisputeReasonFilterApply}
+                    sx={{
+                        backgroundColor: '#7c3aed',
+                        '&:hover': { backgroundColor: '#6d28d9' },
+                        textTransform: 'none',
+                        py: 1.5,
+                    }}
+                >
+                    Apply
+                </Button>
+            </Popover>
+
+            {/* Evidence Due By Filter Popover */}
+            <Popover
+                open={Boolean(evidenceDueByFilterAnchor)}
+                anchorEl={evidenceDueByFilterAnchor}
+                onClose={handleEvidenceDueByFilterClose}
+                anchorOrigin={{
+                    vertical: 'bottom',
+                    horizontal: 'left',
+                }}
+                transformOrigin={{
+                    vertical: 'top',
+                    horizontal: 'left',
+                }}
+                anchorReference="anchorEl"
+                disableAutoFocus
+                disableEnforceFocus
+                disableRestoreFocus
+                disableScrollLock
+                slotProps={{
+                    paper: {
+                        sx: {
+                            p: 3,
+                            minWidth: 300,
+                            borderRadius: 2,
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                            mt: 0.5,
+                        },
+                    },
+                }}
+            >
+                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                    Filter by: Evidence due by
+                </Typography>
+                <Box sx={{ mb: 2 }}>
+                    <TextField
+                        type="date"
+                        value={evidenceDueByFilterInput}
+                        onChange={e =>
+                            setEvidenceDueByFilterInput(e.target.value)
+                        }
+                        fullWidth
+                        InputLabelProps={{
+                            shrink: true,
+                        }}
+                    />
+                </Box>
+                <Button
+                    variant="contained"
+                    fullWidth
+                    onClick={handleEvidenceDueByFilterApply}
+                    sx={{
+                        backgroundColor: '#7c3aed',
+                        '&:hover': { backgroundColor: '#6d28d9' },
+                        textTransform: 'none',
+                        py: 1.5,
+                    }}
+                >
+                    Apply
+                </Button>
+            </Popover>
+
+            {/* Evidence Submitted At Filter Popover */}
+            <Popover
+                open={Boolean(evidenceSubmittedAtFilterAnchor)}
+                anchorEl={evidenceSubmittedAtFilterAnchor}
+                onClose={handleEvidenceSubmittedAtFilterClose}
+                anchorOrigin={{
+                    vertical: 'bottom',
+                    horizontal: 'left',
+                }}
+                transformOrigin={{
+                    vertical: 'top',
+                    horizontal: 'left',
+                }}
+                anchorReference="anchorEl"
+                disableAutoFocus
+                disableEnforceFocus
+                disableRestoreFocus
+                disableScrollLock
+                slotProps={{
+                    paper: {
+                        sx: {
+                            p: 3,
+                            minWidth: 300,
+                            borderRadius: 2,
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                            mt: 0.5,
+                        },
+                    },
+                }}
+            >
+                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                    Filter by: Evidence submitted at
+                </Typography>
+                <Box sx={{ mb: 2 }}>
+                    <TextField
+                        type="date"
+                        value={evidenceSubmittedAtFilterInput}
+                        onChange={e =>
+                            setEvidenceSubmittedAtFilterInput(e.target.value)
+                        }
+                        fullWidth
+                        InputLabelProps={{
+                            shrink: true,
+                        }}
+                    />
+                </Box>
+                <Button
+                    variant="contained"
+                    fullWidth
+                    onClick={handleEvidenceSubmittedAtFilterApply}
+                    sx={{
+                        backgroundColor: '#7c3aed',
+                        '&:hover': { backgroundColor: '#6d28d9' },
+                        textTransform: 'none',
+                        py: 1.5,
+                    }}
+                >
+                    Apply
+                </Button>
+            </Popover>
+
+            {/* Transferred To Filter Popover */}
+            <Popover
+                open={Boolean(transferredToFilterAnchor)}
+                anchorEl={transferredToFilterAnchor}
+                onClose={handleTransferredToFilterClose}
+                anchorOrigin={{
+                    vertical: 'bottom',
+                    horizontal: 'left',
+                }}
+                transformOrigin={{
+                    vertical: 'top',
+                    horizontal: 'left',
+                }}
+                anchorReference="anchorEl"
+                disableAutoFocus
+                disableEnforceFocus
+                disableRestoreFocus
+                disableScrollLock
+                slotProps={{
+                    paper: {
+                        sx: {
+                            p: 3,
+                            minWidth: 300,
+                            borderRadius: 2,
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                            mt: 0.5,
+                        },
+                    },
+                }}
+            >
+                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                    Filter by: Transferred to
+                </Typography>
+                <Box sx={{ mb: 2 }}>
+                    <TextField
+                        value={transferredToFilterInput}
+                        onChange={e =>
+                            setTransferredToFilterInput(e.target.value)
+                        }
+                        placeholder="Enter account ID or email"
+                        fullWidth
+                    />
+                </Box>
+                <Button
+                    variant="contained"
+                    fullWidth
+                    onClick={handleTransferredToFilterApply}
+                    sx={{
+                        backgroundColor: '#7c3aed',
+                        '&:hover': { backgroundColor: '#6d28d9' },
+                        textTransform: 'none',
+                        py: 1.5,
+                    }}
+                >
+                    Apply
+                </Button>
+            </Popover>
+
             {/* Summary Cards - Match Stripe Dashboard: All, Succeeded, Refunded, Disputed, Failed, Uncaptured */}
             <Grid container spacing={2} sx={{ mb: 3, px: 2 }}>
                 <Grid size={{ xs: 12, sm: 6, md: 2 }}>
@@ -2178,7 +3271,15 @@ const Payments: React.FC = () => {
                     variant={
                         customerIdFilter ||
                         emailFilter ||
-                        disputeAmountFilter !== null
+                        disputeAmountFilter !== null ||
+                        cardBrandFilter ||
+                        declineReasonFilter ||
+                        last4DigitsFilter ||
+                        disputedOnFilter !== null ||
+                        disputeReasonFilter ||
+                        evidenceDueByFilter !== null ||
+                        evidenceSubmittedAtFilter !== null ||
+                        transferredToFilter
                             ? 'contained'
                             : 'outlined'
                     }
@@ -2191,12 +3292,28 @@ const Payments: React.FC = () => {
                         borderColor:
                             customerIdFilter ||
                             emailFilter ||
-                            disputeAmountFilter !== null
+                            disputeAmountFilter !== null ||
+                            cardBrandFilter ||
+                            declineReasonFilter ||
+                            last4DigitsFilter ||
+                            disputedOnFilter !== null ||
+                            disputeReasonFilter ||
+                            evidenceDueByFilter !== null ||
+                            evidenceSubmittedAtFilter !== null ||
+                            transferredToFilter
                                 ? '#7c3aed'
                                 : '#e2e8f0',
                         ...((customerIdFilter ||
                             emailFilter ||
-                            disputeAmountFilter !== null) && {
+                            disputeAmountFilter !== null ||
+                            cardBrandFilter ||
+                            declineReasonFilter ||
+                            last4DigitsFilter ||
+                            disputedOnFilter !== null ||
+                            disputeReasonFilter ||
+                            evidenceDueByFilter !== null ||
+                            evidenceSubmittedAtFilter !== null ||
+                            transferredToFilter) && {
                             backgroundColor: '#7c3aed',
                             '&:hover': { backgroundColor: '#6d28d9' },
                         }),
@@ -2224,6 +3341,70 @@ const Payments: React.FC = () => {
                     <Chip
                         label={`Dispute amount ${disputeAmountOperator === 'eq' ? '=' : disputeAmountOperator === 'gt' ? '>' : disputeAmountOperator === 'lt' ? '<' : disputeAmountOperator === 'gte' ? '>=' : '<='} $${disputeAmountFilter.toFixed(2)}`}
                         onDelete={handleDisputeAmountFilterClear}
+                        color="primary"
+                        sx={{ backgroundColor: '#7c3aed' }}
+                    />
+                )}
+                {cardBrandFilter && (
+                    <Chip
+                        label={`Card brand: ${cardBrandFilter === 'amex' ? 'American Express' : cardBrandFilter === 'cartes_bancaires' ? 'Cartes Bancaires' : cardBrandFilter === 'diners' ? 'Diners Club' : cardBrandFilter === 'discover' ? 'Discover' : cardBrandFilter === 'eftpos_au' ? 'eftpos Australia' : cardBrandFilter === 'jcb' ? 'JCB' : cardBrandFilter === 'link' ? 'Link' : cardBrandFilter === 'mastercard' ? 'MasterCard' : cardBrandFilter === 'unionpay' ? 'UnionPay' : 'Visa'}`}
+                        onDelete={handleCardBrandFilterClear}
+                        color="primary"
+                        sx={{ backgroundColor: '#7c3aed' }}
+                    />
+                )}
+                {declineReasonFilter && (
+                    <Chip
+                        label={`Decline reason: ${declineReasonFilter}`}
+                        onDelete={handleDeclineReasonFilterClear}
+                        color="primary"
+                        sx={{ backgroundColor: '#7c3aed' }}
+                    />
+                )}
+                {last4DigitsFilter && (
+                    <Chip
+                        label={`Last 4: ${last4DigitsFilter}`}
+                        onDelete={handleLast4DigitsFilterClear}
+                        color="primary"
+                        sx={{ backgroundColor: '#7c3aed' }}
+                    />
+                )}
+                {disputedOnFilter !== null && (
+                    <Chip
+                        label={`Disputed on: ${stripeService.formatDate(disputedOnFilter)}`}
+                        onDelete={handleDisputedOnFilterClear}
+                        color="primary"
+                        sx={{ backgroundColor: '#7c3aed' }}
+                    />
+                )}
+                {disputeReasonFilter && (
+                    <Chip
+                        label={`Dispute reason: ${disputeReasonFilter}`}
+                        onDelete={handleDisputeReasonFilterClear}
+                        color="primary"
+                        sx={{ backgroundColor: '#7c3aed' }}
+                    />
+                )}
+                {evidenceDueByFilter !== null && (
+                    <Chip
+                        label={`Evidence due by: ${stripeService.formatDate(evidenceDueByFilter)}`}
+                        onDelete={handleEvidenceDueByFilterClear}
+                        color="primary"
+                        sx={{ backgroundColor: '#7c3aed' }}
+                    />
+                )}
+                {evidenceSubmittedAtFilter !== null && (
+                    <Chip
+                        label={`Evidence submitted: ${stripeService.formatDate(evidenceSubmittedAtFilter)}`}
+                        onDelete={handleEvidenceSubmittedAtFilterClear}
+                        color="primary"
+                        sx={{ backgroundColor: '#7c3aed' }}
+                    />
+                )}
+                {transferredToFilter && (
+                    <Chip
+                        label={`Transferred to: ${transferredToFilter}`}
+                        onDelete={handleTransferredToFilterClear}
                         color="primary"
                         sx={{ backgroundColor: '#7c3aed' }}
                     />

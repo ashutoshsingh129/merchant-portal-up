@@ -156,6 +156,16 @@ const Customers: React.FC = () => {
     const [typeFilterAnchor, setTypeFilterAnchor] =
         useState<HTMLButtonElement | null>(null);
 
+    const [discountFilter, setDiscountFilter] = useState<string | null>(null);
+    const [discountFilterAnchor, setDiscountFilterAnchor] =
+        useState<HTMLButtonElement | null>(null);
+
+    const [delinquentFilter, setDelinquentFilter] = useState<string | null>(
+        null
+    );
+    const [delinquentFilterAnchor, setDelinquentFilterAnchor] =
+        useState<HTMLButtonElement | null>(null);
+
     const [nameFilter, setNameFilter] = useState<string>('');
     const [debouncedNameFilter, setDebouncedNameFilter] = useState<string>('');
 
@@ -163,6 +173,8 @@ const Customers: React.FC = () => {
     const dateFilterPopoverRef = useRef<HTMLElement>(null);
     const cardFilterPopoverRef = useRef<HTMLElement>(null);
     const typeFilterPopoverRef = useRef<HTMLElement>(null);
+    const discountFilterPopoverRef = useRef<HTMLElement>(null);
+    const delinquentFilterPopoverRef = useRef<HTMLElement>(null);
 
     const fetchData = useCallback(async () => {
         try {
@@ -293,6 +305,24 @@ const Customers: React.FC = () => {
                     );
                 }
 
+                // Apply discount filter
+                if (discountFilter === 'has_discount') {
+                    filtered = filtered.filter(
+                        customer => customer.discount !== null
+                    );
+                } else if (discountFilter === 'no_discount') {
+                    filtered = filtered.filter(customer => !customer.discount);
+                }
+
+                // Apply delinquent filter
+                if (delinquentFilter === 'delinquent') {
+                    filtered = filtered.filter(customer => customer.delinquent);
+                } else if (delinquentFilter === 'not_delinquent') {
+                    filtered = filtered.filter(
+                        customer => !customer.delinquent
+                    );
+                }
+
                 setCustomers(filtered);
                 setHasMore(response.data.customers.has_more);
                 setSummary(response.data.summary);
@@ -318,6 +348,8 @@ const Customers: React.FC = () => {
         dateFilterInput2,
         typeFilter,
         debouncedNameFilter,
+        discountFilter,
+        delinquentFilter,
     ]);
 
     useEffect(() => {
@@ -479,6 +511,54 @@ const Customers: React.FC = () => {
 
     const handleTypeFilterClear = () => {
         setTypeFilter(null);
+        setCurrentPage(1);
+        setCustomers([]);
+    };
+
+    // Discount filter handlers
+    const handleDiscountFilterClick = (
+        event: React.MouseEvent<HTMLButtonElement>
+    ) => {
+        setDiscountFilterAnchor(event.currentTarget);
+    };
+
+    const handleDiscountFilterClose = () => {
+        setDiscountFilterAnchor(null);
+    };
+
+    const handleDiscountFilterApply = (value: string) => {
+        setDiscountFilter(value === 'all' ? null : value);
+        setCurrentPage(1);
+        setCustomers([]);
+        handleDiscountFilterClose();
+    };
+
+    const handleDiscountFilterClear = () => {
+        setDiscountFilter(null);
+        setCurrentPage(1);
+        setCustomers([]);
+    };
+
+    // Delinquent filter handlers
+    const handleDelinquentFilterClick = (
+        event: React.MouseEvent<HTMLButtonElement>
+    ) => {
+        setDelinquentFilterAnchor(event.currentTarget);
+    };
+
+    const handleDelinquentFilterClose = () => {
+        setDelinquentFilterAnchor(null);
+    };
+
+    const handleDelinquentFilterApply = (value: string) => {
+        setDelinquentFilter(value === 'all' ? null : value);
+        setCurrentPage(1);
+        setCustomers([]);
+        handleDelinquentFilterClose();
+    };
+
+    const handleDelinquentFilterClear = () => {
+        setDelinquentFilter(null);
         setCurrentPage(1);
         setCustomers([]);
     };
@@ -1082,6 +1162,222 @@ const Customers: React.FC = () => {
                 </Box>
             </Popover>
 
+            {/* Discount Filter Popover */}
+            <Popover
+                open={Boolean(discountFilterAnchor)}
+                anchorEl={discountFilterAnchor}
+                onClose={handleDiscountFilterClose}
+                anchorOrigin={{
+                    vertical: 'bottom',
+                    horizontal: 'left',
+                }}
+                transformOrigin={{
+                    vertical: 'top',
+                    horizontal: 'left',
+                }}
+                anchorReference="anchorEl"
+                disableAutoFocus
+                disableEnforceFocus
+                disableRestoreFocus
+                disableScrollLock
+                disablePortal
+                slotProps={{
+                    paper: {
+                        sx: {
+                            p: 3,
+                            minWidth: 300,
+                            borderRadius: 2,
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                            mt: 0.5,
+                        },
+                        ref: (el: HTMLElement | null) => {
+                            if (el) discountFilterPopoverRef.current = el;
+                        },
+                        onMouseDown: e => e.stopPropagation(),
+                    },
+                }}
+                modifiers={[
+                    {
+                        name: 'preventOverflow',
+                        enabled: false,
+                    },
+                    {
+                        name: 'flip',
+                        enabled: false,
+                    },
+                    {
+                        name: 'offset',
+                        enabled: true,
+                        options: {
+                            offset: [0, 4],
+                        },
+                    },
+                ]}
+            >
+                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                    Filter by: Discount
+                </Typography>
+                <Box sx={{ mb: 2 }}>
+                    <FormControl fullWidth>
+                        <Select
+                            value={discountFilter || 'all'}
+                            onChange={e =>
+                                handleDiscountFilterApply(e.target.value)
+                            }
+                            displayEmpty
+                            onOpen={e => e.stopPropagation()}
+                            onClose={e => e.stopPropagation()}
+                            MenuProps={{
+                                container:
+                                    discountFilterPopoverRef.current ||
+                                    document.body,
+                                disablePortal: true,
+                                disableScrollLock: true,
+                                disableAutoFocusItem: true,
+                                anchorOrigin: {
+                                    vertical: 'bottom',
+                                    horizontal: 'left',
+                                },
+                                transformOrigin: {
+                                    vertical: 'top',
+                                    horizontal: 'left',
+                                },
+                                PaperProps: {
+                                    sx: {
+                                        maxHeight: 300,
+                                    },
+                                    onMouseDown: e => e.stopPropagation(),
+                                },
+                                modifiers: [
+                                    {
+                                        name: 'preventOverflow',
+                                        enabled: false,
+                                    },
+                                    {
+                                        name: 'flip',
+                                        enabled: false,
+                                    },
+                                ],
+                            }}
+                        >
+                            <MenuItem value="all">All</MenuItem>
+                            <MenuItem value="has_discount">
+                                Has discount
+                            </MenuItem>
+                            <MenuItem value="no_discount">No discount</MenuItem>
+                        </Select>
+                    </FormControl>
+                </Box>
+            </Popover>
+
+            {/* Delinquent Filter Popover */}
+            <Popover
+                open={Boolean(delinquentFilterAnchor)}
+                anchorEl={delinquentFilterAnchor}
+                onClose={handleDelinquentFilterClose}
+                anchorOrigin={{
+                    vertical: 'bottom',
+                    horizontal: 'left',
+                }}
+                transformOrigin={{
+                    vertical: 'top',
+                    horizontal: 'left',
+                }}
+                anchorReference="anchorEl"
+                disableAutoFocus
+                disableEnforceFocus
+                disableRestoreFocus
+                disableScrollLock
+                disablePortal
+                slotProps={{
+                    paper: {
+                        sx: {
+                            p: 3,
+                            minWidth: 300,
+                            borderRadius: 2,
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                            mt: 0.5,
+                        },
+                        ref: (el: HTMLElement | null) => {
+                            if (el) delinquentFilterPopoverRef.current = el;
+                        },
+                        onMouseDown: e => e.stopPropagation(),
+                    },
+                }}
+                modifiers={[
+                    {
+                        name: 'preventOverflow',
+                        enabled: false,
+                    },
+                    {
+                        name: 'flip',
+                        enabled: false,
+                    },
+                    {
+                        name: 'offset',
+                        enabled: true,
+                        options: {
+                            offset: [0, 4],
+                        },
+                    },
+                ]}
+            >
+                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                    Filter by: Delinquent
+                </Typography>
+                <Box sx={{ mb: 2 }}>
+                    <FormControl fullWidth>
+                        <Select
+                            value={delinquentFilter || 'all'}
+                            onChange={e =>
+                                handleDelinquentFilterApply(e.target.value)
+                            }
+                            displayEmpty
+                            onOpen={e => e.stopPropagation()}
+                            onClose={e => e.stopPropagation()}
+                            MenuProps={{
+                                container:
+                                    delinquentFilterPopoverRef.current ||
+                                    document.body,
+                                disablePortal: true,
+                                disableScrollLock: true,
+                                disableAutoFocusItem: true,
+                                anchorOrigin: {
+                                    vertical: 'bottom',
+                                    horizontal: 'left',
+                                },
+                                transformOrigin: {
+                                    vertical: 'top',
+                                    horizontal: 'left',
+                                },
+                                PaperProps: {
+                                    sx: {
+                                        maxHeight: 300,
+                                    },
+                                    onMouseDown: e => e.stopPropagation(),
+                                },
+                                modifiers: [
+                                    {
+                                        name: 'preventOverflow',
+                                        enabled: false,
+                                    },
+                                    {
+                                        name: 'flip',
+                                        enabled: false,
+                                    },
+                                ],
+                            }}
+                        >
+                            <MenuItem value="all">All</MenuItem>
+                            <MenuItem value="delinquent">Delinquent</MenuItem>
+                            <MenuItem value="not_delinquent">
+                                Not delinquent
+                            </MenuItem>
+                        </Select>
+                    </FormControl>
+                </Box>
+            </Popover>
+
             {/* Summary Cards */}
             <Grid container spacing={2} sx={{ mb: 3, px: 2 }}>
                 <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
@@ -1324,6 +1620,66 @@ const Customers: React.FC = () => {
                                 : 'Guest'
                         }
                         onDelete={handleTypeFilterClear}
+                        color="primary"
+                        sx={{ backgroundColor: '#7c3aed' }}
+                    />
+                )}
+
+                <Button
+                    variant={discountFilter ? 'contained' : 'outlined'}
+                    size="small"
+                    onClick={handleDiscountFilterClick}
+                    startIcon={<Add />}
+                    sx={{
+                        textTransform: 'none',
+                        borderRadius: 1,
+                        borderColor: discountFilter ? '#7c3aed' : '#e2e8f0',
+                        ...(discountFilter && {
+                            backgroundColor: '#7c3aed',
+                            '&:hover': { backgroundColor: '#6d28d9' },
+                        }),
+                    }}
+                >
+                    Discount
+                </Button>
+                {discountFilter && (
+                    <Chip
+                        label={
+                            discountFilter === 'has_discount'
+                                ? 'Has discount'
+                                : 'No discount'
+                        }
+                        onDelete={handleDiscountFilterClear}
+                        color="primary"
+                        sx={{ backgroundColor: '#7c3aed' }}
+                    />
+                )}
+
+                <Button
+                    variant={delinquentFilter ? 'contained' : 'outlined'}
+                    size="small"
+                    onClick={handleDelinquentFilterClick}
+                    startIcon={<Add />}
+                    sx={{
+                        textTransform: 'none',
+                        borderRadius: 1,
+                        borderColor: delinquentFilter ? '#7c3aed' : '#e2e8f0',
+                        ...(delinquentFilter && {
+                            backgroundColor: '#7c3aed',
+                            '&:hover': { backgroundColor: '#6d28d9' },
+                        }),
+                    }}
+                >
+                    Delinquent
+                </Button>
+                {delinquentFilter && (
+                    <Chip
+                        label={
+                            delinquentFilter === 'delinquent'
+                                ? 'Delinquent'
+                                : 'Not delinquent'
+                        }
+                        onDelete={handleDelinquentFilterClear}
                         color="primary"
                         sx={{ backgroundColor: '#7c3aed' }}
                     />
