@@ -399,32 +399,137 @@ export class StripeService {
     // }
 
     try {
-      // Get platform account transactions only
-      // API Endpoint: /v1/payment_intents
+      // Get platform account transactions from both Payment Intents and Charges
+      // API Endpoints: /v1/payment_intents and /v1/charges
+      // Stripe dashboard shows Charges primarily, so we fetch both and prioritize Charges
       console.log(
-        `Fetching fresh transactions from /v1/payment_intents (limit: ${limit})...`,
+        `Fetching fresh transactions from /v1/payment_intents and /v1/charges (with pagination)...`,
       );
-      const platformPayments = await this.stripe!.paymentIntents.list({
-        limit: 100, // Fetch all to get accurate count
-        expand: [
-          'data.customer',
-          'data.latest_charge',
-          'data.latest_charge.outcome',
-          'data.latest_charge.refunds',
-          'data.latest_charge.balance_transaction',
-          'data.latest_charge.transfer_data',
-          'data.payment_method',
-        ],
+      
+      // Fetch ALL Payment Intents with pagination
+      let allPlatformPayments: any[] = [];
+      let hasMorePayments = true;
+      let startingAfterPayment: string | undefined = undefined;
+      
+      while (hasMorePayments && allPlatformPayments.length < 1000) {
+        const paymentParams: any = {
+          limit: 100, // Stripe's maximum
+          expand: [
+            'data.customer',
+            'data.latest_charge',
+            'data.latest_charge.outcome',
+            'data.latest_charge.refunds',
+            'data.latest_charge.balance_transaction',
+            'data.latest_charge.transfer_data',
+            'data.payment_method',
+          ],
+        };
+        
+        if (startingAfterPayment) {
+          paymentParams.starting_after = startingAfterPayment;
+        }
+        
+        const platformPaymentsPage = await this.stripe!.paymentIntents.list(paymentParams);
+        allPlatformPayments = [...allPlatformPayments, ...platformPaymentsPage.data];
+        hasMorePayments = platformPaymentsPage.has_more;
+        
+        if (platformPaymentsPage.data.length > 0) {
+          startingAfterPayment = platformPaymentsPage.data[platformPaymentsPage.data.length - 1].id;
+        } else {
+          hasMorePayments = false;
+        }
+      }
+
+      // Fetch ALL Charges with pagination (these are what show in Stripe dashboard)
+      let allPlatformCharges: any[] = [];
+      let hasMoreCharges = true;
+      let startingAfterCharge: string | undefined = undefined;
+      
+      while (hasMoreCharges && allPlatformCharges.length < 1000) {
+        const chargeParams: any = {
+          limit: 100, // Stripe's maximum
+          expand: ['data.customer', 'data.refunds', 'data.balance_transaction'],
+        };
+        
+        if (startingAfterCharge) {
+          chargeParams.starting_after = startingAfterCharge;
+        }
+        
+        const platformChargesPage = await this.stripe!.charges.list(chargeParams);
+        allPlatformCharges = [...allPlatformCharges, ...platformChargesPage.data];
+        hasMoreCharges = platformChargesPage.has_more;
+        
+        if (platformChargesPage.data.length > 0) {
+          startingAfterCharge = platformChargesPage.data[platformChargesPage.data.length - 1].id;
+        } else {
+          hasMoreCharges = false;
+        }
+      }
+
+      console.log(
+        `Stripe returned ${allPlatformPayments.length} payment intents (across all pages) and ${allPlatformCharges.length} charges (across all pages)`,
+      );
+      
+      // Log all charge IDs for debugging - specifically look for $100 charge
+      console.log('All Charge IDs:', allPlatformCharges.map(c => ({ 
+        id: c.id, 
+        amount: c.amount / 100, 
+        currency: c.currency,
+        status: c.status,
+        created: new Date(c.created * 1000).toISOString(),
+        payment_method: c.payment_method_details?.type,
+        card_last4: c.payment_method_details?.card?.last4
+      })));
+      console.log('All Payment Intent IDs:', allPlatformPayments.map(p => ({ 
+        id: p.id, 
+        amount: p.amount / 100, 
+        created: new Date(p.created * 1000).toISOString() 
+      })));
+      
+      // Check if we have a $100 charge - check both exact match and close matches
+      const hundredDollarCharges = allPlatformCharges.filter(c => {
+        const amountInDollars = c.amount / 100;
+        return amountInDollars === 100 || (amountInDollars >= 99.99 && amountInDollars <= 100.01);
       });
+      console.log(`Found ${hundredDollarCharges.length} charge(s) with $100 amount:`, hundredDollarCharges.map(c => ({ 
+        id: c.id, 
+        amount: c.amount / 100,
+        currency: c.currency,
+        status: c.status,
+        created: new Date(c.created * 1000).toISOString(),
+        payment_method: c.payment_method_details?.type,
+        card_last4: c.payment_method_details?.card?.last4
+      })));
+      
+      // Also check all charges to see what we have
+      console.log('All charges summary:', allPlatformCharges.map(c => ({
+        id: c.id,
+        amount: c.amount / 100,
+        status: c.status
+      })));
 
-      console.log(
-        `Stripe returned ${platformPayments.data.length} payment intents, has_more: ${platformPayments.has_more}`,
-      );
+      // Track charge IDs from Payment Intents and create a map for deduplication
+      const paymentIntentToChargeMap = new Map<string, string>(); // paymentIntentId -> chargeId
 
-      const platformTransactions = platformPayments.data.map((payment) => {
+      // Convert Payment Intents to transactions
+      const platformPaymentTransactions = allPlatformPayments.map((payment) => {
         // Access latest_charge through the payment object (may be expanded)
         const paymentAny = payment as any;
         const latestCharge = paymentAny.latest_charge;
+        
+        // Track the charge ID for deduplication
+        if (latestCharge) {
+          let chargeId: string | null = null;
+          if (typeof latestCharge === 'object' && latestCharge !== null && latestCharge.id) {
+            chargeId = latestCharge.id;
+          } else if (typeof latestCharge === 'string') {
+            chargeId = latestCharge;
+          }
+          
+          if (chargeId) {
+            paymentIntentToChargeMap.set(payment.id, chargeId);
+          }
+        }
         
         // Extract outcome for decline reason
         const outcome = latestCharge?.outcome;
@@ -508,15 +613,109 @@ export class StripeService {
         };
       });
 
-      // Remove duplicates by ID
-      const uniqueTransactions = platformTransactions.filter(
-        (transaction, index, self) =>
-          index === self.findIndex((t) => t.id === transaction.id),
-      );
+      // Convert Charges to transactions
+      const platformChargeTransactions = allPlatformCharges.map((charge) => {
+        const refunds = charge.refunds?.data || [];
+        const balanceTransaction = charge.balance_transaction;
+        const isRefunded = charge.refunded || refunds.length > 0;
+        const refundedAmount = charge.amount_refunded || refunds.reduce(
+          (sum: number, refund: any) => sum + (refund.amount || 0),
+          0,
+        );
+
+        // Handle balance transaction - it can be a string ID or an expanded object
+        let settlementMerchant: string | undefined = undefined;
+        if (balanceTransaction) {
+          if (typeof balanceTransaction === 'object' && balanceTransaction !== null) {
+            settlementMerchant = (balanceTransaction as any).destination || undefined;
+          }
+        }
+
+        return {
+          id: charge.id,
+          amount: charge.amount,
+          currency: charge.currency,
+          status: charge.status === 'succeeded' ? 'succeeded' : charge.status === 'failed' ? 'failed' : 'pending',
+          description: charge.description || charge.metadata?.description || undefined,
+          customer: this.extractCustomerInfo(charge),
+          created: charge.created,
+          metadata: charge.metadata || {},
+          stripe_account: 'platform',
+          is_refunded: isRefunded,
+          refunded_amount: refundedAmount,
+          amount_received: charge.amount, // Charges are already captured
+          payment_method: charge.payment_method_details ? {
+            type: charge.payment_method_details.type,
+            card: charge.payment_method_details.card ? {
+              brand: charge.payment_method_details.card.brand,
+              last4: charge.payment_method_details.card.last4,
+            } : undefined,
+          } : undefined,
+          // Decline reason and failure details
+          // Outcome type has 'reason' and 'risk_level', but not 'failure_code' or 'failure_message'
+          // Those are on the Charge object itself
+          decline_reason: charge.outcome?.reason || charge.failure_code || undefined,
+          failure_message: charge.failure_message || undefined,
+          risk_level: charge.outcome?.risk_level || undefined,
+          // Settlement and transfer information
+          settlement_merchant: settlementMerchant,
+          // Terminal information (if available in metadata)
+          terminal_location: charge.metadata?.terminal_location || charge.metadata?.location_id || undefined,
+          // Charge reference
+          charge_id: charge.id,
+        };
+      });
+
+      // Combine Payment Intents and Charges
+      const allPlatformTransactions = [
+        ...platformPaymentTransactions,
+        ...platformChargeTransactions,
+      ];
+
+      // Remove duplicates - prioritize Charges over Payment Intents (Stripe dashboard shows Charges)
+      // A Payment Intent creates a Charge, so we show the Charge and skip the Payment Intent if it has a charge
+      const uniqueTransactions: any[] = [];
+      const seenTransactionIds = new Set<string>();
+
+      // First, add ALL Charges (these are what Stripe dashboard shows)
+      // Charges are the actual payment transactions
+      // All charges should have IDs starting with 'ch_', but we'll add all charge transactions regardless
+      for (const transaction of platformChargeTransactions) {
+        // All charges converted from Stripe charges should have 'ch_' prefix
+        // But we'll add all transactions from platformChargeTransactions to be safe
+        uniqueTransactions.push(transaction);
+        seenTransactionIds.add(transaction.id);
+        console.log(`Added Charge: ${transaction.id}, Amount: ${transaction.amount / 100}, Status: ${transaction.status}, Created: ${new Date(transaction.created * 1000).toISOString()}`);
+      }
+      
+      console.log(`Total Charges added: ${uniqueTransactions.length} out of ${platformChargeTransactions.length} charge transactions`);
+
+      // Then, add Payment Intents that don't have a charge yet (uncaptured payment intents)
+      // These are payment intents that haven't been converted to charges yet
+      for (const transaction of platformPaymentTransactions) {
+        if (transaction.id.startsWith('pi_')) {
+          // Check if this payment intent has a charge that we've already added
+          const chargeId = paymentIntentToChargeMap.get(transaction.id);
+          const hasCharge = chargeId ? seenTransactionIds.has(chargeId) : false;
+          
+          // Only add payment intents that don't have a charge (uncaptured)
+          if (!hasCharge) {
+            uniqueTransactions.push(transaction);
+          }
+        }
+      }
 
       console.log(
-        `After deduplication: ${uniqueTransactions.length} unique transactions (was ${platformTransactions.length})`,
+        `After deduplication: ${uniqueTransactions.length} unique transactions (from ${platformPaymentTransactions.length} payment intents + ${platformChargeTransactions.length} charges)`,
       );
+      
+      // Log all unique transaction IDs and amounts for debugging
+      console.log('Unique Transactions:', uniqueTransactions.map(t => ({ 
+        id: t.id, 
+        amount: t.amount, 
+        status: t.status,
+        created: new Date(t.created * 1000).toISOString()
+      })));
 
       // Sort by creation date (newest first)
       uniqueTransactions.sort((a, b) => b.created - a.created);
