@@ -140,9 +140,17 @@ const Customers: React.FC = () => {
         useState<HTMLButtonElement | null>(null);
 
     const [dateFilterDays, setDateFilterDays] = useState<number | null>(null);
+    const [dateFilterType, setDateFilterType] = useState<string>('in_last');
     const [dateFilterAnchor, setDateFilterAnchor] =
         useState<HTMLButtonElement | null>(null);
     const [dateFilterInput, setDateFilterInput] = useState<string>('1');
+    const [dateFilterInput2, setDateFilterInput2] = useState<string>('');
+    // Temporary state for popover (doesn't trigger API calls)
+    const [tempDateFilterType, setTempDateFilterType] =
+        useState<string>('in_last');
+    const [tempDateFilterInput, setTempDateFilterInput] = useState<string>('1');
+    const [tempDateFilterInput2, setTempDateFilterInput2] =
+        useState<string>('');
 
     const [typeFilter, setTypeFilter] = useState<string | null>(null);
     const [typeFilterAnchor, setTypeFilterAnchor] =
@@ -152,6 +160,7 @@ const Customers: React.FC = () => {
     const [debouncedNameFilter, setDebouncedNameFilter] = useState<string>('');
 
     // Refs for Popover containers to fix Select menu positioning
+    const dateFilterPopoverRef = useRef<HTMLElement>(null);
     const cardFilterPopoverRef = useRef<HTMLElement>(null);
     const typeFilterPopoverRef = useRef<HTMLElement>(null);
 
@@ -215,12 +224,58 @@ const Customers: React.FC = () => {
                 }
 
                 // Apply date filter
-                if (dateFilterDays) {
+                if (dateFilterType === 'in_last' && dateFilterDays) {
                     const cutoffDate =
                         Date.now() / 1000 - dateFilterDays * 24 * 60 * 60;
                     filtered = filtered.filter(
                         customer => customer.created >= cutoffDate
                     );
+                } else if (dateFilterType !== 'in_last' && dateFilterInput) {
+                    // Convert date string to Unix timestamp (start of day in UTC)
+                    const filterDate = new Date(dateFilterInput);
+                    filterDate.setHours(0, 0, 0, 0);
+                    const filterTimestamp = Math.floor(
+                        filterDate.getTime() / 1000
+                    );
+
+                    // End of day timestamp for "equal to" and "before or on"
+                    const filterDateEnd = new Date(dateFilterInput);
+                    filterDateEnd.setHours(23, 59, 59, 999);
+                    const filterTimestampEnd = Math.floor(
+                        filterDateEnd.getTime() / 1000
+                    );
+
+                    filtered = filtered.filter(customer => {
+                        const customerDate = customer.created;
+                        switch (dateFilterType) {
+                            case 'equal_to':
+                                return (
+                                    customerDate >= filterTimestamp &&
+                                    customerDate <= filterTimestampEnd
+                                );
+                            case 'on_or_after':
+                                return customerDate >= filterTimestamp;
+                            case 'before_or_on':
+                                return customerDate <= filterTimestampEnd;
+                            case 'between':
+                                if (dateFilterInput2) {
+                                    const filterDate2 = new Date(
+                                        dateFilterInput2
+                                    );
+                                    filterDate2.setHours(23, 59, 59, 999);
+                                    const filterTimestamp2 = Math.floor(
+                                        filterDate2.getTime() / 1000
+                                    );
+                                    return (
+                                        customerDate >= filterTimestamp &&
+                                        customerDate <= filterTimestamp2
+                                    );
+                                }
+                                return false;
+                            default:
+                                return true;
+                        }
+                    });
                 }
 
                 // Apply type filter
@@ -258,6 +313,9 @@ const Customers: React.FC = () => {
         emailFilter,
         cardFilter,
         dateFilterDays,
+        dateFilterType,
+        dateFilterInput,
+        dateFilterInput2,
         typeFilter,
         debouncedNameFilter,
     ]);
@@ -348,6 +406,10 @@ const Customers: React.FC = () => {
     const handleDateFilterClick = (
         event: React.MouseEvent<HTMLButtonElement>
     ) => {
+        // Initialize temp state with current values when opening
+        setTempDateFilterType(dateFilterType);
+        setTempDateFilterInput(dateFilterInput);
+        setTempDateFilterInput2(dateFilterInput2);
         setDateFilterAnchor(event.currentTarget);
     };
 
@@ -356,18 +418,31 @@ const Customers: React.FC = () => {
     };
 
     const handleDateFilterApply = () => {
-        const days = parseInt(dateFilterInput);
-        if (days > 0) {
-            setDateFilterDays(days);
+        handleDateFilterClose(); // Close popover first
+        // Use setTimeout to ensure popover closes before layout shift
+        setTimeout(() => {
+            if (tempDateFilterType === 'in_last') {
+                const days = parseInt(tempDateFilterInput);
+                if (days > 0) {
+                    setDateFilterDays(days);
+                    setDateFilterInput(tempDateFilterInput);
+                }
+            } else {
+                setDateFilterDays(null);
+                setDateFilterInput(tempDateFilterInput);
+                setDateFilterInput2(tempDateFilterInput2);
+            }
+            setDateFilterType(tempDateFilterType); // Apply temp state to actual state
             setCurrentPage(1);
             setCustomers([]);
-        }
-        handleDateFilterClose();
+        }, 0);
     };
 
     const handleDateFilterClear = () => {
         setDateFilterDays(null);
+        setDateFilterType('in_last');
         setDateFilterInput('1');
+        setDateFilterInput2('');
         setCurrentPage(1);
         setCustomers([]);
     };
@@ -671,6 +746,7 @@ const Customers: React.FC = () => {
                 disableEnforceFocus
                 disableRestoreFocus
                 disableScrollLock
+                disablePortal
                 slotProps={{
                     paper: {
                         sx: {
@@ -680,62 +756,208 @@ const Customers: React.FC = () => {
                             boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
                             mt: 0.5, // Small gap below button
                         },
+                        ref: (el: HTMLElement | null) => {
+                            if (el) dateFilterPopoverRef.current = el;
+                        },
+                        onMouseDown: e => e.stopPropagation(),
                     },
                 }}
+                modifiers={[
+                    {
+                        name: 'preventOverflow',
+                        enabled: false,
+                    },
+                    {
+                        name: 'flip',
+                        enabled: false,
+                    },
+                    {
+                        name: 'offset',
+                        enabled: true,
+                        options: {
+                            offset: [0, 4],
+                        },
+                    },
+                ]}
             >
                 <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
-                    Filter by: created date
+                    Filter by: Date
                 </Typography>
                 <Box sx={{ mb: 2 }}>
-                    <Typography
-                        variant="body2"
-                        sx={{ mb: 1, color: '#6b7280' }}
-                    >
-                        is in the last
-                    </Typography>
-                    <TextField
-                        type="number"
-                        value={dateFilterInput}
-                        onChange={e => setDateFilterInput(e.target.value)}
-                        InputProps={{
-                            endAdornment: (
-                                <InputAdornment position="end">
-                                    <Box
-                                        sx={{
-                                            display: 'flex',
-                                            flexDirection: 'column',
-                                        }}
-                                    >
-                                        <IconButton
-                                            size="small"
-                                            onClick={incrementDays}
-                                            sx={{
-                                                height: 16,
-                                                width: 16,
-                                                mb: 0.5,
-                                            }}
-                                        >
-                                            <KeyboardArrowUp fontSize="small" />
-                                        </IconButton>
-                                        <IconButton
-                                            size="small"
-                                            onClick={decrementDays}
-                                            sx={{ height: 16, width: 16 }}
-                                        >
-                                            <KeyboardArrowDown fontSize="small" />
-                                        </IconButton>
-                                    </Box>
-                                </InputAdornment>
-                            ),
-                        }}
-                        sx={{ width: '100%' }}
-                    />
-                    <Typography
-                        variant="body2"
-                        sx={{ mt: 1, color: '#6b7280' }}
-                    >
-                        days
-                    </Typography>
+                    <FormControl fullWidth sx={{ mb: 2 }}>
+                        <Select
+                            value={tempDateFilterType}
+                            onChange={e =>
+                                setTempDateFilterType(e.target.value)
+                            }
+                            displayEmpty
+                            onOpen={e => e.stopPropagation()}
+                            onClose={e => e.stopPropagation()}
+                            MenuProps={{
+                                container:
+                                    dateFilterPopoverRef.current ||
+                                    document.body,
+                                disablePortal: true,
+                                disableScrollLock: true,
+                                disableAutoFocusItem: true,
+                                anchorOrigin: {
+                                    vertical: 'bottom',
+                                    horizontal: 'left',
+                                },
+                                transformOrigin: {
+                                    vertical: 'top',
+                                    horizontal: 'left',
+                                },
+                                PaperProps: {
+                                    sx: {
+                                        maxHeight: 300,
+                                    },
+                                    onMouseDown: e => e.stopPropagation(),
+                                },
+                                modifiers: [
+                                    {
+                                        name: 'preventOverflow',
+                                        enabled: false,
+                                    },
+                                    {
+                                        name: 'flip',
+                                        enabled: false,
+                                    },
+                                ],
+                            }}
+                        >
+                            <MenuItem value="in_last">is in the last</MenuItem>
+                            <MenuItem value="equal_to">is equal to</MenuItem>
+                            <MenuItem value="between">is between</MenuItem>
+                            <MenuItem value="on_or_after">
+                                is on or after
+                            </MenuItem>
+                            <MenuItem value="before_or_on">
+                                is before or on
+                            </MenuItem>
+                        </Select>
+                    </FormControl>
+                    {tempDateFilterType === 'in_last' && (
+                        <>
+                            <TextField
+                                type="number"
+                                value={tempDateFilterInput}
+                                onChange={e =>
+                                    setTempDateFilterInput(e.target.value)
+                                }
+                                InputProps={{
+                                    endAdornment: (
+                                        <InputAdornment position="end">
+                                            <Box
+                                                sx={{
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                }}
+                                            >
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={() => {
+                                                        const current =
+                                                            parseInt(
+                                                                tempDateFilterInput
+                                                            ) || 1;
+                                                        setTempDateFilterInput(
+                                                            String(current + 1)
+                                                        );
+                                                    }}
+                                                    sx={{
+                                                        height: 16,
+                                                        width: 16,
+                                                        mb: 0.5,
+                                                    }}
+                                                >
+                                                    <KeyboardArrowUp fontSize="small" />
+                                                </IconButton>
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={() => {
+                                                        const current =
+                                                            parseInt(
+                                                                tempDateFilterInput
+                                                            ) || 1;
+                                                        if (current > 1) {
+                                                            setTempDateFilterInput(
+                                                                String(
+                                                                    current - 1
+                                                                )
+                                                            );
+                                                        }
+                                                    }}
+                                                    sx={{
+                                                        height: 16,
+                                                        width: 16,
+                                                    }}
+                                                >
+                                                    <KeyboardArrowDown fontSize="small" />
+                                                </IconButton>
+                                            </Box>
+                                        </InputAdornment>
+                                    ),
+                                }}
+                                sx={{ width: '100%' }}
+                            />
+                            <Typography
+                                variant="body2"
+                                sx={{ mt: 1, color: '#6b7280' }}
+                            >
+                                days
+                            </Typography>
+                        </>
+                    )}
+                    {(tempDateFilterType === 'equal_to' ||
+                        tempDateFilterType === 'on_or_after' ||
+                        tempDateFilterType === 'before_or_on') && (
+                        <TextField
+                            type="date"
+                            value={tempDateFilterInput}
+                            onChange={e =>
+                                setTempDateFilterInput(e.target.value)
+                            }
+                            fullWidth
+                            InputLabelProps={{
+                                shrink: true,
+                            }}
+                        />
+                    )}
+                    {tempDateFilterType === 'between' && (
+                        <Box
+                            sx={{
+                                display: 'flex',
+                                gap: 1,
+                                alignItems: 'center',
+                            }}
+                        >
+                            <TextField
+                                type="date"
+                                value={tempDateFilterInput}
+                                onChange={e =>
+                                    setTempDateFilterInput(e.target.value)
+                                }
+                                label="From"
+                                fullWidth
+                                InputLabelProps={{
+                                    shrink: true,
+                                }}
+                            />
+                            <TextField
+                                type="date"
+                                value={tempDateFilterInput2}
+                                onChange={e =>
+                                    setTempDateFilterInput2(e.target.value)
+                                }
+                                label="To"
+                                fullWidth
+                                InputLabelProps={{
+                                    shrink: true,
+                                }}
+                            />
+                        </Box>
+                    )}
                 </Box>
                 <Button
                     variant="contained"
@@ -1058,9 +1280,19 @@ const Customers: React.FC = () => {
                 >
                     Created date
                 </Button>
-                {dateFilterDays && (
+                {(dateFilterDays || dateFilterType !== 'in_last') && (
                     <Chip
-                        label={`Last ${dateFilterDays} day${dateFilterDays !== 1 ? 's' : ''}`}
+                        label={
+                            dateFilterType === 'in_last'
+                                ? `Last ${dateFilterDays} day${dateFilterDays !== 1 ? 's' : ''}`
+                                : dateFilterType === 'equal_to'
+                                  ? `Date: ${dateFilterInput}`
+                                  : dateFilterType === 'between'
+                                    ? `Date: ${dateFilterInput} - ${dateFilterInput2}`
+                                    : dateFilterType === 'on_or_after'
+                                      ? `On or after: ${dateFilterInput}`
+                                      : `Before or on: ${dateFilterInput}`
+                        }
                         onDelete={handleDateFilterClear}
                         color="primary"
                         sx={{ backgroundColor: '#7c3aed' }}
