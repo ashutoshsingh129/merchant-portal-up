@@ -33,6 +33,7 @@ import {
     KeyboardArrowUp,
     KeyboardArrowDown,
     ArrowDropDown,
+    Search,
 } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
 import { stripeService, StripeCustomer } from '../../services/stripeService';
@@ -147,6 +148,9 @@ const Customers: React.FC = () => {
     const [typeFilterAnchor, setTypeFilterAnchor] =
         useState<HTMLButtonElement | null>(null);
 
+    const [nameFilter, setNameFilter] = useState<string>('');
+    const [debouncedNameFilter, setDebouncedNameFilter] = useState<string>('');
+
     // Refs for Popover containers to fix Select menu positioning
     const cardFilterPopoverRef = useRef<HTMLElement>(null);
     const typeFilterPopoverRef = useRef<HTMLElement>(null);
@@ -226,6 +230,14 @@ const Customers: React.FC = () => {
                     filtered = filtered.filter(customer => !customer.email);
                 }
 
+                // Apply name filter (case-insensitive, like matching)
+                if (debouncedNameFilter.trim()) {
+                    const searchTerm = debouncedNameFilter.trim().toLowerCase();
+                    filtered = filtered.filter(customer =>
+                        customer.name?.toLowerCase().includes(searchTerm)
+                    );
+                }
+
                 setCustomers(filtered);
                 setHasMore(response.data.customers.has_more);
                 setSummary(response.data.summary);
@@ -247,11 +259,23 @@ const Customers: React.FC = () => {
         cardFilter,
         dateFilterDays,
         typeFilter,
+        debouncedNameFilter,
     ]);
 
     useEffect(() => {
         fetchData();
     }, [fetchData]);
+
+    // Debounce name filter
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedNameFilter(nameFilter);
+            setCurrentPage(1);
+            setCustomers([]);
+        }, 500); // 500ms debounce delay
+
+        return () => clearTimeout(timer);
+    }, [nameFilter]);
 
     const clearCache = async () => {
         try {
@@ -921,6 +945,46 @@ const Customers: React.FC = () => {
                     flexWrap: 'wrap',
                 }}
             >
+                <TextField
+                    placeholder="Search by name..."
+                    value={nameFilter}
+                    onChange={e => setNameFilter(e.target.value)}
+                    size="small"
+                    InputProps={{
+                        startAdornment: (
+                            <InputAdornment position="start">
+                                <Search sx={{ color: '#9ca3af' }} />
+                            </InputAdornment>
+                        ),
+                    }}
+                    sx={{
+                        minWidth: 250,
+                        '& .MuiOutlinedInput-root': {
+                            borderRadius: 1,
+                            borderColor: nameFilter ? '#7c3aed' : '#e2e8f0',
+                            '&:hover': {
+                                borderColor: nameFilter ? '#6d28d9' : '#cbd5e0',
+                            },
+                            '&.Mui-focused': {
+                                borderColor: '#7c3aed',
+                            },
+                        },
+                    }}
+                />
+                {nameFilter && (
+                    <Chip
+                        label={`Name: ${nameFilter}`}
+                        onDelete={() => {
+                            setNameFilter('');
+                            setDebouncedNameFilter('');
+                            setCurrentPage(1);
+                            setCustomers([]);
+                        }}
+                        color="primary"
+                        sx={{ backgroundColor: '#7c3aed' }}
+                    />
+                )}
+
                 <Button
                     variant={emailFilter ? 'contained' : 'outlined'}
                     size="small"
