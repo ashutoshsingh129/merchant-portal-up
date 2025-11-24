@@ -9,6 +9,7 @@ import { lightTheme, darkTheme } from './theme';
 import Layout from './components/Layout/Layout';
 import Dashboard from './components/Dashboard/Dashboard';
 import Payments from './components/Payments';
+import TransactionDetail from './components/Payments/TransactionDetail';
 import Payouts from './components/Payouts';
 import Customers from './components/Customers';
 
@@ -25,6 +26,14 @@ const AppRoutes: React.FC = () => {
                         <Route path="/" element={<Payments />} />
                         <Route path="/dashboard" element={<Dashboard />} />
                         <Route path="/payments" element={<Payments />} />
+                        <Route
+                            path="/payments/:id"
+                            element={<TransactionDetail />}
+                        />
+                        <Route
+                            path="/transactions/:id"
+                            element={<TransactionDetail />}
+                        />
                         <Route
                             path="/transactions/payouts"
                             element={<Payouts />}

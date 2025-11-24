@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
     Box,
     Typography,
@@ -98,6 +99,12 @@ const StyledTable = styled(Table)(({ theme }) => ({
         padding: theme.spacing(1.5),
         whiteSpace: 'nowrap', // Prevent text wrapping
     },
+    '& .MuiTableRow-root': {
+        cursor: 'pointer',
+        '&:hover': {
+            backgroundColor: '#f8fafc',
+        },
+    },
     '& .MuiTableHead-root .MuiTableCell-root': {
         backgroundColor: '#f8fafc',
         fontWeight: 600,
@@ -134,6 +141,7 @@ const CardBrandBox = styled(Box)(({ theme }) => ({
 }));
 
 const Payments: React.FC = () => {
+    const navigate = useNavigate();
     const [transactions, setTransactions] = useState<StripeTransaction[]>([]);
     const [summary, setSummary] = useState({
         total: 0,
@@ -3441,7 +3449,12 @@ const Payments: React.FC = () => {
                         </TableHead>
                         <TableBody>
                             {transactions.map(transaction => (
-                                <TableRow key={transaction.id}>
+                                <TableRow
+                                    key={transaction.id}
+                                    onClick={() =>
+                                        navigate(`/payments/${transaction.id}`)
+                                    }
+                                >
                                     <TableCell>
                                         <Typography
                                             variant="body2"

@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query, Post, Body } from '@nestjs/common';
+import { Controller, Get, Param, Query, Post, Body, HttpException, HttpStatus } from '@nestjs/common';
 import { StripeService } from './stripe.service';
 
 @Controller('stripe')
@@ -21,8 +21,15 @@ export class StripeController {
   }
 
   @Get('transactions/:id')
-  getTransaction(@Param('id') id: string) {
-    return this.stripeService.getTransaction(id);
+  async getTransaction(@Param('id') id: string) {
+    try {
+      return await this.stripeService.getTransaction(id);
+    } catch (error: any) {
+      throw new HttpException(
+        error.message || 'Failed to fetch transaction',
+        error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
 
   @Get('transactions-with-summary')

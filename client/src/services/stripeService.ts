@@ -11,6 +11,13 @@ export interface StripeTransaction {
         name?: string;
     };
     payment_method?: {
+        id?: string;
+        object?: string;
+        allow_redisplay?: string;
+        created?: number;
+        customer?: string;
+        livemode?: boolean;
+        metadata?: Record<string, string>;
         type: string;
         card?: {
             brand: string;
@@ -18,6 +25,33 @@ export interface StripeTransaction {
             exp_month?: number;
             exp_year?: number;
             funding?: string;
+        };
+        us_bank_account?: {
+            account_holder_type?: string;
+            account_type?: string;
+            bank_name?: string;
+            financial_connections_account?: string | null;
+            fingerprint?: string;
+            last4?: string;
+            networks?: {
+                preferred?: string;
+                supported?: string[];
+            };
+            routing_number?: string;
+            status_details?: Record<string, any>;
+        };
+        billing_details?: {
+            name?: string;
+            email?: string;
+            phone?: string;
+            address?: {
+                line1?: string;
+                line2?: string;
+                city?: string;
+                state?: string;
+                postal_code?: string;
+                country?: string;
+            };
         };
     };
     created: number;
@@ -67,6 +101,44 @@ export interface StripeTransaction {
     balance_transaction_id?: string;
     net_amount?: number;
     fee_details?: any;
+    stripe_fee?: number;
+    payment_reference?: string;
+
+    // Full PaymentIntent fields matching Stripe API structure
+    object?: string;
+    amount_details?: {
+        tip?: Record<string, any>;
+    };
+    application?: string | null;
+    application_fee_amount?: number | null;
+    automatic_payment_methods?: any | null;
+    canceled_at?: number | null;
+    cancellation_reason?: string | null;
+    client_secret?: string;
+    excluded_payment_method_types?: string[] | null;
+    last_payment_error?: any | null;
+    livemode?: boolean;
+    next_action?: any | null;
+    on_behalf_of?: string | null;
+    payment_method_configuration_details?: any | null;
+    payment_method_options?: {
+        us_bank_account?: {
+            mandate_options?: Record<string, any>;
+            verification_method?: string;
+        };
+        [key: string]: any;
+    };
+    processing?: any | null;
+    receipt_email?: string | null;
+    review?: string | null;
+    setup_future_usage?: string | null;
+    shipping?: any | null;
+    source?: string | null;
+    statement_descriptor?: string;
+    statement_descriptor_suffix?: string | null;
+    transfer_data?: any | null;
+    transfer_group?: string | null;
+    latest_charge_id?: string;
 }
 
 // Stripe Payout Types
