@@ -1305,7 +1305,6 @@ export class StripeService {
               'payment_intent.review',
               'payment_intent.source',
               'payment_intent.transfer_data.destination',
-              'payment_method',
               'refunds',
               'balance_transaction',
               'transfer_data',
