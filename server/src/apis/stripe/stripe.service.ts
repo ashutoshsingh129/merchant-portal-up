@@ -69,7 +69,9 @@ export class StripeService {
    * Helper function to extract customer information from payment intent or charge
    * Handles both string ID and expanded customer object
    */
-  private extractCustomerInfo(paymentOrCharge: any): { id: string; email?: string } | undefined {
+  private extractCustomerInfo(
+    paymentOrCharge: any,
+  ): { id: string; email?: string } | undefined {
     if (!paymentOrCharge.customer) {
       return undefined;
     }
@@ -81,16 +83,21 @@ export class StripeService {
       // Customer is just an ID
       customerId = paymentOrCharge.customer;
       // Use receipt_email or billing_details.email as fallback for email
-      customerEmail = paymentOrCharge.receipt_email 
-        || paymentOrCharge.billing_details?.email 
-        || undefined;
-    } else if (typeof paymentOrCharge.customer === 'object' && paymentOrCharge.customer !== null) {
+      customerEmail =
+        paymentOrCharge.receipt_email ||
+        paymentOrCharge.billing_details?.email ||
+        undefined;
+    } else if (
+      typeof paymentOrCharge.customer === 'object' &&
+      paymentOrCharge.customer !== null
+    ) {
       // Customer is expanded object
       customerId = paymentOrCharge.customer.id || undefined;
-      customerEmail = paymentOrCharge.customer.email 
-        || paymentOrCharge.receipt_email 
-        || paymentOrCharge.billing_details?.email 
-        || undefined;
+      customerEmail =
+        paymentOrCharge.customer.email ||
+        paymentOrCharge.receipt_email ||
+        paymentOrCharge.billing_details?.email ||
+        undefined;
     }
 
     if (!customerId) {
@@ -405,12 +412,12 @@ export class StripeService {
       console.log(
         `Fetching fresh transactions from /v1/payment_intents and /v1/charges (with pagination)...`,
       );
-      
+
       // Fetch ALL Payment Intents with pagination
       let allPlatformPayments: any[] = [];
       let hasMorePayments = true;
       let startingAfterPayment: string | undefined = undefined;
-      
+
       while (hasMorePayments && allPlatformPayments.length < 1000) {
         const paymentParams: any = {
           limit: 100, // Stripe's maximum
@@ -424,17 +431,22 @@ export class StripeService {
             'data.payment_method',
           ],
         };
-        
+
         if (startingAfterPayment) {
           paymentParams.starting_after = startingAfterPayment;
         }
-        
-        const platformPaymentsPage = await this.stripe!.paymentIntents.list(paymentParams);
-        allPlatformPayments = [...allPlatformPayments, ...platformPaymentsPage.data];
+
+        const platformPaymentsPage =
+          await this.stripe!.paymentIntents.list(paymentParams);
+        allPlatformPayments = [
+          ...allPlatformPayments,
+          ...platformPaymentsPage.data,
+        ];
         hasMorePayments = platformPaymentsPage.has_more;
-        
+
         if (platformPaymentsPage.data.length > 0) {
-          startingAfterPayment = platformPaymentsPage.data[platformPaymentsPage.data.length - 1].id;
+          startingAfterPayment =
+            platformPaymentsPage.data[platformPaymentsPage.data.length - 1].id;
         } else {
           hasMorePayments = false;
         }
@@ -444,23 +456,28 @@ export class StripeService {
       let allPlatformCharges: any[] = [];
       let hasMoreCharges = true;
       let startingAfterCharge: string | undefined = undefined;
-      
+
       while (hasMoreCharges && allPlatformCharges.length < 1000) {
         const chargeParams: any = {
           limit: 100, // Stripe's maximum
           expand: ['data.customer', 'data.refunds', 'data.balance_transaction'],
         };
-        
+
         if (startingAfterCharge) {
           chargeParams.starting_after = startingAfterCharge;
         }
-        
-        const platformChargesPage = await this.stripe!.charges.list(chargeParams);
-        allPlatformCharges = [...allPlatformCharges, ...platformChargesPage.data];
+
+        const platformChargesPage =
+          await this.stripe!.charges.list(chargeParams);
+        allPlatformCharges = [
+          ...allPlatformCharges,
+          ...platformChargesPage.data,
+        ];
         hasMoreCharges = platformChargesPage.has_more;
-        
+
         if (platformChargesPage.data.length > 0) {
-          startingAfterCharge = platformChargesPage.data[platformChargesPage.data.length - 1].id;
+          startingAfterCharge =
+            platformChargesPage.data[platformChargesPage.data.length - 1].id;
         } else {
           hasMoreCharges = false;
         }
@@ -469,44 +486,59 @@ export class StripeService {
       console.log(
         `Stripe returned ${allPlatformPayments.length} payment intents (across all pages) and ${allPlatformCharges.length} charges (across all pages)`,
       );
-      
+
       // Log all charge IDs for debugging - specifically look for $100 charge
-      console.log('All Charge IDs:', allPlatformCharges.map(c => ({ 
-        id: c.id, 
-        amount: c.amount / 100, 
-        currency: c.currency,
-        status: c.status,
-        created: new Date(c.created * 1000).toISOString(),
-        payment_method: c.payment_method_details?.type,
-        card_last4: c.payment_method_details?.card?.last4
-      })));
-      console.log('All Payment Intent IDs:', allPlatformPayments.map(p => ({ 
-        id: p.id, 
-        amount: p.amount / 100, 
-        created: new Date(p.created * 1000).toISOString() 
-      })));
-      
+      console.log(
+        'All Charge IDs:',
+        allPlatformCharges.map((c) => ({
+          id: c.id,
+          amount: c.amount / 100,
+          currency: c.currency,
+          status: c.status,
+          created: new Date(c.created * 1000).toISOString(),
+          payment_method: c.payment_method_details?.type,
+          card_last4: c.payment_method_details?.card?.last4,
+        })),
+      );
+      console.log(
+        'All Payment Intent IDs:',
+        allPlatformPayments.map((p) => ({
+          id: p.id,
+          amount: p.amount / 100,
+          created: new Date(p.created * 1000).toISOString(),
+        })),
+      );
+
       // Check if we have a $100 charge - check both exact match and close matches
-      const hundredDollarCharges = allPlatformCharges.filter(c => {
+      const hundredDollarCharges = allPlatformCharges.filter((c) => {
         const amountInDollars = c.amount / 100;
-        return amountInDollars === 100 || (amountInDollars >= 99.99 && amountInDollars <= 100.01);
+        return (
+          amountInDollars === 100 ||
+          (amountInDollars >= 99.99 && amountInDollars <= 100.01)
+        );
       });
-      console.log(`Found ${hundredDollarCharges.length} charge(s) with $100 amount:`, hundredDollarCharges.map(c => ({ 
-        id: c.id, 
-        amount: c.amount / 100,
-        currency: c.currency,
-        status: c.status,
-        created: new Date(c.created * 1000).toISOString(),
-        payment_method: c.payment_method_details?.type,
-        card_last4: c.payment_method_details?.card?.last4
-      })));
-      
+      console.log(
+        `Found ${hundredDollarCharges.length} charge(s) with $100 amount:`,
+        hundredDollarCharges.map((c) => ({
+          id: c.id,
+          amount: c.amount / 100,
+          currency: c.currency,
+          status: c.status,
+          created: new Date(c.created * 1000).toISOString(),
+          payment_method: c.payment_method_details?.type,
+          card_last4: c.payment_method_details?.card?.last4,
+        })),
+      );
+
       // Also check all charges to see what we have
-      console.log('All charges summary:', allPlatformCharges.map(c => ({
-        id: c.id,
-        amount: c.amount / 100,
-        status: c.status
-      })));
+      console.log(
+        'All charges summary:',
+        allPlatformCharges.map((c) => ({
+          id: c.id,
+          amount: c.amount / 100,
+          status: c.status,
+        })),
+      );
 
       // Track charge IDs from Payment Intents and create a map for deduplication
       const paymentIntentToChargeMap = new Map<string, string>(); // paymentIntentId -> chargeId
@@ -516,21 +548,25 @@ export class StripeService {
         // Access latest_charge through the payment object (may be expanded)
         const paymentAny = payment as any;
         const latestCharge = paymentAny.latest_charge;
-        
+
         // Track the charge ID for deduplication
         if (latestCharge) {
           let chargeId: string | null = null;
-          if (typeof latestCharge === 'object' && latestCharge !== null && latestCharge.id) {
+          if (
+            typeof latestCharge === 'object' &&
+            latestCharge !== null &&
+            latestCharge.id
+          ) {
             chargeId = latestCharge.id;
           } else if (typeof latestCharge === 'string') {
             chargeId = latestCharge;
           }
-          
+
           if (chargeId) {
             paymentIntentToChargeMap.set(payment.id, chargeId);
           }
         }
-        
+
         // Extract outcome for decline reason
         const outcome = latestCharge?.outcome;
         const refunds = latestCharge?.refunds?.data || [];
@@ -566,7 +602,7 @@ export class StripeService {
         const paymentMethod = payment.payment_method;
         let paymentMethodType = null;
         let paymentMethodCard = null;
-        
+
         if (paymentMethod) {
           if (typeof paymentMethod === 'object' && paymentMethod !== null) {
             paymentMethodType = paymentMethod.type;
@@ -592,12 +628,18 @@ export class StripeService {
           is_refunded: isRefunded,
           refunded_amount: refundedAmount,
           amount_received: payment.amount_received || undefined,
-          payment_method: paymentMethodType ? {
-            type: paymentMethodType,
-            card: paymentMethodCard,
-          } : undefined,
+          payment_method: paymentMethodType
+            ? {
+                type: paymentMethodType,
+                card: paymentMethodCard,
+              }
+            : undefined,
           // Decline reason and failure details
-          decline_reason: outcome?.reason || outcome?.failure_code || outcome?.decline_reason || undefined,
+          decline_reason:
+            outcome?.reason ||
+            outcome?.failure_code ||
+            outcome?.decline_reason ||
+            undefined,
           failure_message: outcome?.failure_message || undefined,
           risk_level: outcome?.risk_level || undefined,
           // Settlement and transfer information
@@ -618,17 +660,23 @@ export class StripeService {
         const refunds = charge.refunds?.data || [];
         const balanceTransaction = charge.balance_transaction;
         const isRefunded = charge.refunded || refunds.length > 0;
-        const refundedAmount = charge.amount_refunded || refunds.reduce(
-          (sum: number, refund: any) => sum + (refund.amount || 0),
-          0,
-        );
+        const refundedAmount =
+          charge.amount_refunded ||
+          refunds.reduce(
+            (sum: number, refund: any) => sum + (refund.amount || 0),
+            0,
+          );
 
         // Handle balance transaction - it can be a string ID or an expanded object
         let settlementMerchant: string | undefined = undefined;
         let balanceTransactionDetails: any = undefined;
         if (balanceTransaction) {
-          if (typeof balanceTransaction === 'object' && balanceTransaction !== null) {
-            settlementMerchant = (balanceTransaction as any).destination || undefined;
+          if (
+            typeof balanceTransaction === 'object' &&
+            balanceTransaction !== null
+          ) {
+            settlementMerchant =
+              (balanceTransaction as any).destination || undefined;
             balanceTransactionDetails = {
               id: (balanceTransaction as any).id,
               amount: (balanceTransaction as any).amount,
@@ -640,7 +688,8 @@ export class StripeService {
               fee: (balanceTransaction as any).fee,
               fee_details: (balanceTransaction as any).fee_details,
               net: (balanceTransaction as any).net,
-              reporting_category: (balanceTransaction as any).reporting_category,
+              reporting_category: (balanceTransaction as any)
+                .reporting_category,
               status: (balanceTransaction as any).status,
               type: (balanceTransaction as any).type,
             };
@@ -652,19 +701,23 @@ export class StripeService {
         if (charge.payment_method_details) {
           paymentMethodDetails = {
             type: charge.payment_method_details.type,
-            card: charge.payment_method_details.card ? {
-              brand: charge.payment_method_details.card.brand,
-              last4: charge.payment_method_details.card.last4,
-              exp_month: charge.payment_method_details.card.exp_month,
-              exp_year: charge.payment_method_details.card.exp_year,
-              funding: charge.payment_method_details.card.funding,
-              country: charge.payment_method_details.card.country,
-              fingerprint: charge.payment_method_details.card.fingerprint,
-              network: charge.payment_method_details.card.network,
-              network_transaction_id: charge.payment_method_details.card.network_transaction_id,
-              authorization_code: charge.payment_method_details.card.authorization_code,
-              checks: charge.payment_method_details.card.checks,
-            } : undefined,
+            card: charge.payment_method_details.card
+              ? {
+                  brand: charge.payment_method_details.card.brand,
+                  last4: charge.payment_method_details.card.last4,
+                  exp_month: charge.payment_method_details.card.exp_month,
+                  exp_year: charge.payment_method_details.card.exp_year,
+                  funding: charge.payment_method_details.card.funding,
+                  country: charge.payment_method_details.card.country,
+                  fingerprint: charge.payment_method_details.card.fingerprint,
+                  network: charge.payment_method_details.card.network,
+                  network_transaction_id:
+                    charge.payment_method_details.card.network_transaction_id,
+                  authorization_code:
+                    charge.payment_method_details.card.authorization_code,
+                  checks: charge.payment_method_details.card.checks,
+                }
+              : undefined,
           };
         }
 
@@ -675,8 +728,14 @@ export class StripeService {
           amount_captured: charge.amount_captured,
           amount_refunded: charge.amount_refunded,
           currency: charge.currency,
-          status: charge.status === 'succeeded' ? 'succeeded' : charge.status === 'failed' ? 'failed' : 'pending',
-          description: charge.description || charge.metadata?.description || undefined,
+          status:
+            charge.status === 'succeeded'
+              ? 'succeeded'
+              : charge.status === 'failed'
+                ? 'failed'
+                : 'pending',
+          description:
+            charge.description || charge.metadata?.description || undefined,
           customer: this.extractCustomerInfo(charge),
           created: charge.created,
           metadata: charge.metadata || {},
@@ -686,49 +745,62 @@ export class StripeService {
           amount_received: charge.amount, // Charges are already captured
           payment_method: paymentMethodDetails,
           // Decline reason and failure details
-          decline_reason: charge.outcome?.reason || charge.failure_code || undefined,
+          decline_reason:
+            charge.outcome?.reason || charge.failure_code || undefined,
           failure_message: charge.failure_message || undefined,
           failure_code: charge.failure_code || undefined,
-          failure_balance_transaction: charge.failure_balance_transaction || undefined,
+          failure_balance_transaction:
+            charge.failure_balance_transaction || undefined,
           risk_level: charge.outcome?.risk_level || undefined,
-          outcome: charge.outcome ? {
-            network_status: charge.outcome.network_status,
-            reason: charge.outcome.reason,
-            risk_level: charge.outcome.risk_level,
-            risk_score: charge.outcome.risk_score,
-            seller_message: charge.outcome.seller_message,
-            type: charge.outcome.type,
-            advice_code: charge.outcome.advice_code,
-            network_advice_code: charge.outcome.network_advice_code,
-            network_decline_code: charge.outcome.network_decline_code,
-          } : undefined,
+          outcome: charge.outcome
+            ? {
+                network_status: charge.outcome.network_status,
+                reason: charge.outcome.reason,
+                risk_level: charge.outcome.risk_level,
+                risk_score: charge.outcome.risk_score,
+                seller_message: charge.outcome.seller_message,
+                type: charge.outcome.type,
+                advice_code: charge.outcome.advice_code,
+                network_advice_code: charge.outcome.network_advice_code,
+                network_decline_code: charge.outcome.network_decline_code,
+              }
+            : undefined,
           // Settlement and transfer information
           settlement_merchant: settlementMerchant,
           balance_transaction: balanceTransactionDetails,
-          balance_transaction_id: typeof balanceTransaction === 'string' ? balanceTransaction : balanceTransaction?.id,
+          balance_transaction_id:
+            typeof balanceTransaction === 'string'
+              ? balanceTransaction
+              : balanceTransaction?.id,
           // Application and fee information
           application: charge.application || null,
           application_fee: charge.application_fee || null,
           application_fee_amount: charge.application_fee_amount || null,
           // Billing details
-          billing_details: charge.billing_details ? {
-            address: charge.billing_details.address ? {
-              city: charge.billing_details.address.city,
-              country: charge.billing_details.address.country,
-              line1: charge.billing_details.address.line1,
-              line2: charge.billing_details.address.line2,
-              postal_code: charge.billing_details.address.postal_code,
-              state: charge.billing_details.address.state,
-            } : undefined,
-            email: charge.billing_details.email,
-            name: charge.billing_details.name,
-            phone: charge.billing_details.phone,
-            tax_id: charge.billing_details.tax_id,
-          } : undefined,
+          billing_details: charge.billing_details
+            ? {
+                address: charge.billing_details.address
+                  ? {
+                      city: charge.billing_details.address.city,
+                      country: charge.billing_details.address.country,
+                      line1: charge.billing_details.address.line1,
+                      line2: charge.billing_details.address.line2,
+                      postal_code: charge.billing_details.address.postal_code,
+                      state: charge.billing_details.address.state,
+                    }
+                  : undefined,
+                email: charge.billing_details.email,
+                name: charge.billing_details.name,
+                phone: charge.billing_details.phone,
+                tax_id: charge.billing_details.tax_id,
+              }
+            : undefined,
           // Statement descriptors
-          calculated_statement_descriptor: charge.calculated_statement_descriptor || undefined,
+          calculated_statement_descriptor:
+            charge.calculated_statement_descriptor || undefined,
           statement_descriptor: charge.statement_descriptor || undefined,
-          statement_descriptor_suffix: charge.statement_descriptor_suffix || undefined,
+          statement_descriptor_suffix:
+            charge.statement_descriptor_suffix || undefined,
           // Capture and payment status
           captured: charge.captured,
           paid: charge.paid,
@@ -736,7 +808,10 @@ export class StripeService {
           dispute: (charge as any).dispute || null,
           disputed: charge.disputed || false,
           // Payment intent reference
-          payment_intent: typeof charge.payment_intent === 'string' ? charge.payment_intent : charge.payment_intent?.id || undefined,
+          payment_intent:
+            typeof charge.payment_intent === 'string'
+              ? charge.payment_intent
+              : charge.payment_intent?.id || undefined,
           // Receipt information
           receipt_email: charge.receipt_email || undefined,
           receipt_number: charge.receipt_number || undefined,
@@ -767,17 +842,14 @@ export class StripeService {
           // Livemode
           livemode: charge.livemode || false,
           // Terminal information (if available in metadata)
-          terminal_location: charge.metadata?.terminal_location || charge.metadata?.location_id || undefined,
+          terminal_location:
+            charge.metadata?.terminal_location ||
+            charge.metadata?.location_id ||
+            undefined,
           // Charge reference
           charge_id: charge.id,
         };
       });
-
-      // Combine Payment Intents and Charges
-      const allPlatformTransactions = [
-        ...platformPaymentTransactions,
-        ...platformChargeTransactions,
-      ];
 
       // Remove duplicates - prioritize Charges over Payment Intents (Stripe dashboard shows Charges)
       // A Payment Intent creates a Charge, so we show the Charge and skip the Payment Intent if it has a charge
@@ -792,10 +864,14 @@ export class StripeService {
         // But we'll add all transactions from platformChargeTransactions to be safe
         uniqueTransactions.push(transaction);
         seenTransactionIds.add(transaction.id);
-        console.log(`Added Charge: ${transaction.id}, Amount: ${transaction.amount / 100}, Status: ${transaction.status}, Created: ${new Date(transaction.created * 1000).toISOString()}`);
+        console.log(
+          `Added Charge: ${transaction.id}, Amount: ${transaction.amount / 100}, Status: ${transaction.status}, Created: ${new Date(transaction.created * 1000).toISOString()}`,
+        );
       }
-      
-      console.log(`Total Charges added: ${uniqueTransactions.length} out of ${platformChargeTransactions.length} charge transactions`);
+
+      console.log(
+        `Total Charges added: ${uniqueTransactions.length} out of ${platformChargeTransactions.length} charge transactions`,
+      );
 
       // Then, add Payment Intents that don't have a charge yet (uncaptured payment intents)
       // These are payment intents that haven't been converted to charges yet
@@ -804,7 +880,7 @@ export class StripeService {
           // Check if this payment intent has a charge that we've already added
           const chargeId = paymentIntentToChargeMap.get(transaction.id);
           const hasCharge = chargeId ? seenTransactionIds.has(chargeId) : false;
-          
+
           // Only add payment intents that don't have a charge (uncaptured)
           if (!hasCharge) {
             uniqueTransactions.push(transaction);
@@ -815,14 +891,17 @@ export class StripeService {
       console.log(
         `After deduplication: ${uniqueTransactions.length} unique transactions (from ${platformPaymentTransactions.length} payment intents + ${platformChargeTransactions.length} charges)`,
       );
-      
+
       // Log all unique transaction IDs and amounts for debugging
-      console.log('Unique Transactions:', uniqueTransactions.map(t => ({ 
-        id: t.id, 
-        amount: t.amount, 
-        status: t.status,
-        created: new Date(t.created * 1000).toISOString()
-      })));
+      console.log(
+        'Unique Transactions:',
+        uniqueTransactions.map((t) => ({
+          id: t.id,
+          amount: t.amount,
+          status: t.status,
+          created: new Date(t.created * 1000).toISOString(),
+        })),
+      );
 
       // Sort by creation date (newest first)
       uniqueTransactions.sort((a, b) => b.created - a.created);
@@ -842,31 +921,35 @@ export class StripeService {
 
       // Apply status filter if provided
       let filteredTransactions = dateFilteredTransactions;
-      
+
       // If statusFilter array is provided, filter by raw payment intent statuses
       if (params?.statusFilter && params.statusFilter.length > 0) {
         filteredTransactions = dateFilteredTransactions.filter(
           (transaction: any) => {
             const status = transaction.status as string;
-            
+
             // Handle special case: 'refunded' status filter should check is_refunded flag
             // If 'refunded' is in the filter and transaction is refunded, include it
             if (params.statusFilter!.includes('refunded')) {
               if (transaction.is_refunded) return true;
             }
-            
+
             // For status matching: check if the transaction status is in the filter array
             // Note: If 'succeeded' is in filter, we still want succeeded transactions even if they're refunded
             // (user can explicitly filter by both 'succeeded' and 'refunded' if they want only refunded succeeded)
             if (params.statusFilter!.includes(status)) {
               // Special handling: if filtering by 'succeeded' but not 'refunded', exclude refunded succeeded transactions
               // This matches Stripe dashboard behavior where 'succeeded' excludes refunded
-              if (status === 'succeeded' && !params.statusFilter!.includes('refunded') && transaction.is_refunded) {
+              if (
+                status === 'succeeded' &&
+                !params.statusFilter!.includes('refunded') &&
+                transaction.is_refunded
+              ) {
                 return false;
               }
               return true;
             }
-            
+
             return false;
           },
         );
@@ -912,23 +995,25 @@ export class StripeService {
       if (params?.amount !== undefined && params.amount !== null) {
         const amountInCents = Math.round(params.amount * 100); // Convert to cents
         const operator = params.amountOperator || 'eq';
-        
-        filteredTransactions = filteredTransactions.filter((transaction: any) => {
-          switch (operator) {
-            case 'eq':
-              return transaction.amount === amountInCents;
-            case 'gt':
-              return transaction.amount > amountInCents;
-            case 'lt':
-              return transaction.amount < amountInCents;
-            case 'gte':
-              return transaction.amount >= amountInCents;
-            case 'lte':
-              return transaction.amount <= amountInCents;
-            default:
-              return transaction.amount === amountInCents;
-          }
-        });
+
+        filteredTransactions = filteredTransactions.filter(
+          (transaction: any) => {
+            switch (operator) {
+              case 'eq':
+                return transaction.amount === amountInCents;
+              case 'gt':
+                return transaction.amount > amountInCents;
+              case 'lt':
+                return transaction.amount < amountInCents;
+              case 'gte':
+                return transaction.amount >= amountInCents;
+              case 'lte':
+                return transaction.amount <= amountInCents;
+              default:
+                return transaction.amount === amountInCents;
+            }
+          },
+        );
         console.log(
           `Filtered by amount (${operator} ${params.amount}): ${filteredTransactions.length} transactions`,
         );
@@ -937,7 +1022,9 @@ export class StripeService {
       // Apply currency filter if provided
       if (params?.currency && params.currency !== 'all') {
         filteredTransactions = filteredTransactions.filter(
-          (transaction: any) => transaction.currency.toLowerCase() === params.currency.toLowerCase(),
+          (transaction: any) =>
+            transaction.currency.toLowerCase() ===
+            params.currency.toLowerCase(),
         );
         console.log(
           `Filtered by currency '${params.currency}': ${filteredTransactions.length} transactions`,
@@ -948,14 +1035,20 @@ export class StripeService {
       // Note: Stripe's PaymentIntent.list() and Charge.list() APIs don't support filtering by payment method type
       // So we fetch all transactions and filter them here on the backend
       if (params?.paymentMethod && params.paymentMethod !== 'all') {
-        filteredTransactions = filteredTransactions.filter((transaction: any) => {
-          const transactionPaymentMethodType = transaction.payment_method?.type;
-          // Case-insensitive matching
-          if (!transactionPaymentMethodType) {
-            return false;
-          }
-          return transactionPaymentMethodType.toLowerCase() === params.paymentMethod.toLowerCase();
-        });
+        filteredTransactions = filteredTransactions.filter(
+          (transaction: any) => {
+            const transactionPaymentMethodType =
+              transaction.payment_method?.type;
+            // Case-insensitive matching
+            if (!transactionPaymentMethodType) {
+              return false;
+            }
+            return (
+              transactionPaymentMethodType.toLowerCase() ===
+              params.paymentMethod.toLowerCase()
+            );
+          },
+        );
         console.log(
           `Filtered by payment method '${params.paymentMethod}': ${filteredTransactions.length} transactions`,
         );
@@ -1280,14 +1373,15 @@ export class StripeService {
 
   async getTransaction(id: string) {
     this.ensureStripe();
-    
+
     let payment: any;
     let charge: any;
-    
+    let stripeAccount: string | undefined = undefined;
+
     // Check if ID is a Charge (ch_), Payment (py_), or PaymentIntent (pi_)
     try {
       if (id.startsWith('ch_')) {
-        // Retrieve Charge first
+        // Retrieve Charge first from platform account
         try {
           charge = await this.stripe!.charges.retrieve(id, {
             expand: [
@@ -1312,29 +1406,148 @@ export class StripeService {
             ],
           });
         } catch (chargeError: any) {
-          // If charge retrieval fails, try to find it via PaymentIntents
-          // This handles cases where the charge might be on a Connect account
-          // or where we need to search for it differently
-          if (chargeError.type === 'StripeInvalidRequestError') {
-            // Try to find the charge by searching recent PaymentIntents
+          // If charge retrieval fails, try to find it on Connect accounts
+          if (
+            chargeError.type === 'StripeInvalidRequestError' ||
+            chargeError.code === 'resource_missing'
+          ) {
+            // Try to find the charge on Connect accounts (limit to 20 accounts for performance)
             try {
-              const recentPayments = await this.stripe!.paymentIntents.list({
-                limit: 100,
-                expand: ['data.latest_charge'],
-              });
-              
-              // Look for a PaymentIntent whose latest_charge matches our charge ID
-              const foundPayment = recentPayments.data.find((pi: any) => {
-                const latestCharge = pi.latest_charge;
-                if (latestCharge && typeof latestCharge === 'object' && latestCharge.id === id) {
-                  return true;
+              const accounts = await this.stripe!.accounts.list({ limit: 20 });
+              let foundCharge = false;
+
+              // Try each Connect account with Promise.all for parallel requests (but limit concurrency)
+              const accountPromises = accounts.data
+                .slice(0, 10)
+                .map(async (account) => {
+                  try {
+                    const connectCharge = await this.stripe!.charges.retrieve(
+                      id,
+                      {
+                        expand: [
+                          'payment_intent',
+                          'payment_intent.payment_method',
+                          'payment_intent.payment_method.us_bank_account',
+                          'payment_intent.latest_charge',
+                          'payment_intent.latest_charge.outcome',
+                          'payment_intent.latest_charge.refunds',
+                          'payment_intent.latest_charge.balance_transaction',
+                          'payment_intent.latest_charge.transfer_data',
+                          'payment_intent.customer',
+                          'refunds',
+                          'balance_transaction',
+                          'customer',
+                        ],
+                      },
+                      {
+                        stripeAccount: account.id,
+                      },
+                    );
+
+                    return { charge: connectCharge, accountId: account.id };
+                  } catch (connectError: any) {
+                    return null;
+                  }
+                });
+
+              const results = await Promise.all(accountPromises);
+              const foundResult = results.find((result) => result !== null);
+
+              if (foundResult) {
+                charge = foundResult.charge;
+                stripeAccount = foundResult.accountId;
+                foundCharge = true;
+              }
+
+              if (!foundCharge) {
+                // Try to find the charge by searching recent PaymentIntents on platform
+                try {
+                  const recentPayments = await this.stripe!.paymentIntents.list(
+                    {
+                      limit: 100,
+                      expand: ['data.latest_charge'],
+                    },
+                  );
+
+                  // Look for a PaymentIntent whose latest_charge matches our charge ID
+                  const foundPayment = recentPayments.data.find((pi: any) => {
+                    const latestCharge = pi.latest_charge;
+                    if (
+                      latestCharge &&
+                      typeof latestCharge === 'object' &&
+                      latestCharge.id === id
+                    ) {
+                      return true;
+                    }
+                    return false;
+                  });
+
+                  if (foundPayment) {
+                    // Retrieve the full PaymentIntent with all expansions
+                    payment = await this.stripe!.paymentIntents.retrieve(
+                      foundPayment.id,
+                      {
+                        expand: [
+                          'payment_method',
+                          'payment_method.us_bank_account',
+                          'latest_charge',
+                          'latest_charge.outcome',
+                          'latest_charge.refunds',
+                          'latest_charge.balance_transaction',
+                          'latest_charge.transfer_data',
+                          'latest_charge.payment_method_details',
+                          'customer',
+                          'application',
+                          'on_behalf_of',
+                          'review',
+                          'source',
+                          'transfer_data.destination',
+                        ],
+                      },
+                    );
+                    // Set charge from the payment's latest_charge
+                    charge = payment.latest_charge;
+                  } else {
+                    // Re-throw the original error with more context
+                    throw new Error(
+                      `Charge ${id} not found. The charge might be on a Connect account, ` +
+                        `or it may not exist in the current Stripe account. Original error: ${chargeError.message}`,
+                    );
+                  }
+                } catch (searchError: any) {
+                  // If search also fails, throw the original charge error
+                  throw new Error(
+                    `Charge ${id} not found. The charge might be on a Connect account, ` +
+                      `or it may not exist in the current Stripe account. Original error: ${chargeError.message}`,
+                  );
                 }
-                return false;
-              });
-              
-              if (foundPayment) {
-                // Retrieve the full PaymentIntent with all expansions
-                payment = await this.stripe!.paymentIntents.retrieve(foundPayment.id, {
+              }
+            } catch (searchError: any) {
+              // If search also fails, throw the original charge error
+              throw new Error(
+                `Charge ${id} not found. The charge might be on a Connect account, ` +
+                  `or it may not exist in the current Stripe account. Original error: ${chargeError.message}`,
+              );
+            }
+          } else {
+            // Re-throw non-StripeInvalidRequestError errors as-is
+            throw chargeError;
+          }
+        }
+
+        // Get PaymentIntent from charge if available (only if we don't already have payment)
+        if (charge && charge.payment_intent && !payment) {
+          const paymentIntentId =
+            typeof charge.payment_intent === 'string'
+              ? charge.payment_intent
+              : charge.payment_intent.id;
+          if (typeof charge.payment_intent === 'object') {
+            payment = charge.payment_intent;
+          } else {
+            try {
+              payment = await this.stripe!.paymentIntents.retrieve(
+                paymentIntentId,
+                {
                   expand: [
                     'payment_method',
                     'payment_method.us_bank_account',
@@ -1351,55 +1564,82 @@ export class StripeService {
                     'source',
                     'transfer_data.destination',
                   ],
-                });
-                // Set charge from the payment's latest_charge
-                charge = payment.latest_charge;
-              } else {
-                // Re-throw the original error with more context
-                throw new Error(
-                  `Charge ${id} not found. The charge might be on a Connect account, ` +
-                  `or it may not exist in the current Stripe account. Original error: ${chargeError.message}`
-                );
-              }
-            } catch (searchError: any) {
-              // If search also fails, throw the original charge error
-              throw new Error(
-                `Charge ${id} not found. The charge might be on a Connect account, ` +
-                `or it may not exist in the current Stripe account. Original error: ${chargeError.message}`
+                },
+                stripeAccount ? { stripeAccount } : undefined,
               );
+            } catch (piError: any) {
+              // If PaymentIntent retrieval fails and we have a Connect account, try that
+              if (
+                stripeAccount &&
+                piError.type === 'StripeInvalidRequestError'
+              ) {
+                // Already tried with stripeAccount, so just use the charge
+                payment = null;
+              } else if (
+                !stripeAccount &&
+                piError.type === 'StripeInvalidRequestError'
+              ) {
+                // Try Connect accounts (limit to 10 for performance)
+                try {
+                  const accounts = await this.stripe!.accounts.list({
+                    limit: 20,
+                  });
+
+                  const accountPromises = accounts.data
+                    .slice(0, 10)
+                    .map(async (account) => {
+                      try {
+                        const connectPayment =
+                          await this.stripe!.paymentIntents.retrieve(
+                            paymentIntentId,
+                            {
+                              expand: [
+                                'payment_method',
+                                'payment_method.us_bank_account',
+                                'latest_charge',
+                                'latest_charge.outcome',
+                                'latest_charge.refunds',
+                                'latest_charge.balance_transaction',
+                                'latest_charge.transfer_data',
+                                'latest_charge.payment_method_details',
+                                'customer',
+                              ],
+                            },
+                            {
+                              stripeAccount: account.id,
+                            },
+                          );
+                        return {
+                          payment: connectPayment,
+                          accountId: account.id,
+                        };
+                      } catch (connectError: any) {
+                        return null;
+                      }
+                    });
+
+                  const results = await Promise.all(accountPromises);
+                  const foundResult = results.find((result) => result !== null);
+
+                  if (foundResult) {
+                    payment = foundResult.payment;
+                    stripeAccount = foundResult.accountId;
+                  } else {
+                    // PaymentIntent not found, will create mock payment from charge
+                    payment = null;
+                  }
+                } catch (searchError: any) {
+                  // PaymentIntent not found, will create mock payment from charge
+                  payment = null;
+                }
+              } else {
+                throw piError;
+              }
             }
-          } else {
-            // Re-throw non-StripeInvalidRequestError errors as-is
-            throw chargeError;
           }
         }
-        
-        // Get PaymentIntent from charge if available (only if we don't already have payment)
-        if (charge && charge.payment_intent && !payment) {
-          const paymentIntentId = typeof charge.payment_intent === 'string' 
-            ? charge.payment_intent 
-            : charge.payment_intent.id;
-          payment = typeof charge.payment_intent === 'object' 
-            ? charge.payment_intent 
-            : await this.stripe!.paymentIntents.retrieve(paymentIntentId, {
-      expand: [
-        'payment_method',
-        'payment_method.us_bank_account',
-        'latest_charge',
-        'latest_charge.outcome',
-        'latest_charge.refunds',
-        'latest_charge.balance_transaction',
-        'latest_charge.transfer_data',
-        'latest_charge.payment_method_details',
-        'customer',
-        'application',
-        'on_behalf_of',
-        'review',
-        'source',
-        'transfer_data.destination',
-      ],
-              });
-        } else {
+
+        if (!payment) {
           // Charge without PaymentIntent - create a mock payment object from charge
           // Use the charge itself as the source of truth
           payment = {
@@ -1416,7 +1656,9 @@ export class StripeService {
             amount_capturable: 0,
             capture_method: charge.captured ? 'automatic' : 'manual',
             confirmation_method: 'automatic',
-            payment_method_types: [charge.payment_method_details?.type || 'card'],
+            payment_method_types: [
+              charge.payment_method_details?.type || 'card',
+            ],
             // Add latest_charge reference so the code below can access it
             latest_charge: charge,
           };
@@ -1425,7 +1667,7 @@ export class StripeService {
         // Payment objects (py_) - These are used for certain payment methods like ACH/bank transfers
         // Payment objects are not directly retrievable via Stripe API
         // They are linked to PaymentIntents, but we need the PaymentIntent ID to retrieve them
-        // 
+        //
         // Solution: Try to retrieve as PaymentIntent first (sometimes the ID format allows this)
         // If that fails, we need to search through recent PaymentIntents to find the related one
         try {
@@ -1456,7 +1698,7 @@ export class StripeService {
               limit: 100,
               expand: ['data.payment_method', 'data.latest_charge'],
             });
-            
+
             // Look for a PaymentIntent that might be related to this Payment ID
             // Check if any PaymentIntent's charge or payment method references this Payment ID
             let foundPayment = recentPayments.data.find((pi: any) => {
@@ -1466,77 +1708,164 @@ export class StripeService {
                 return (
                   charge.id === id ||
                   pi.id === id ||
-                  (charge.payment_method_details?.us_bank_account?.payment_reference?.includes(id.split('_')[1])) ||
-                  (pi.metadata && Object.values(pi.metadata).some((val: any) => String(val).includes(id)))
+                  charge.payment_method_details?.us_bank_account?.payment_reference?.includes(
+                    id.split('_')[1],
+                  ) ||
+                  (pi.metadata &&
+                    Object.values(pi.metadata).some((val: any) =>
+                      String(val).includes(id),
+                    ))
                 );
               }
               return false;
             });
-            
+
             if (!foundPayment) {
               // Try searching by looking at the Payment ID pattern
               // Sometimes Payment IDs are stored in the charge's payment_method_details
               foundPayment = recentPayments.data.find((pi: any) => {
                 const charge = pi.latest_charge;
-                if (charge && typeof charge === 'object' && charge.payment_method_details) {
+                if (
+                  charge &&
+                  typeof charge === 'object' &&
+                  charge.payment_method_details
+                ) {
                   const pmDetails = charge.payment_method_details;
                   // Check if payment reference or other fields might contain the Payment ID
                   if (pmDetails.us_bank_account) {
-                    const ref = pmDetails.us_bank_account.payment_reference || 
-                               pmDetails.us_bank_account.reference_number;
-                    return ref && ref.includes(id.split('_')[1]?.substring(0, 10));
+                    const ref =
+                      pmDetails.us_bank_account.payment_reference ||
+                      pmDetails.us_bank_account.reference_number;
+                    return (
+                      ref && ref.includes(id.split('_')[1]?.substring(0, 10))
+                    );
                   }
                 }
                 return false;
               });
             }
-            
+
             if (foundPayment) {
-              payment = await this.stripe!.paymentIntents.retrieve(foundPayment.id, {
-                expand: [
-                  'payment_method',
-                  'payment_method.us_bank_account',
-                  'latest_charge',
-                  'latest_charge.outcome',
-                  'latest_charge.refunds',
-                  'latest_charge.balance_transaction',
-                  'latest_charge.transfer_data',
-                  'latest_charge.payment_method_details',
-                  'customer',
-                  'application',
-                  'on_behalf_of',
-                  'review',
-                  'source',
-                  'transfer_data.destination',
-                ],
-              });
+              payment = await this.stripe!.paymentIntents.retrieve(
+                foundPayment.id,
+                {
+                  expand: [
+                    'payment_method',
+                    'payment_method.us_bank_account',
+                    'latest_charge',
+                    'latest_charge.outcome',
+                    'latest_charge.refunds',
+                    'latest_charge.balance_transaction',
+                    'latest_charge.transfer_data',
+                    'latest_charge.payment_method_details',
+                    'customer',
+                    'application',
+                    'on_behalf_of',
+                    'review',
+                    'source',
+                    'transfer_data.destination',
+                  ],
+                },
+              );
             } else {
-              throw new Error(`Payment ${id} not found. Payment objects (py_) cannot be directly retrieved. Please use the PaymentIntent ID (pi_...) from the transaction list.`);
+              throw new Error(
+                `Payment ${id} not found. Payment objects (py_) cannot be directly retrieved. Please use the PaymentIntent ID (pi_...) from the transaction list.`,
+              );
             }
           } catch (searchError: any) {
-            throw new Error(`Unable to retrieve Payment ${id}. Payment objects need to be accessed through their PaymentIntent ID. Please check the transaction list for the correct PaymentIntent ID (pi_...). Error: ${searchError.message}`);
+            throw new Error(
+              `Unable to retrieve Payment ${id}. Payment objects need to be accessed through their PaymentIntent ID. Please check the transaction list for the correct PaymentIntent ID (pi_...). Error: ${searchError.message}`,
+            );
           }
         }
       } else {
         // Retrieve PaymentIntent directly with full expansion
-        payment = await this.stripe!.paymentIntents.retrieve(id, {
-          expand: [
-            'payment_method',
-            'payment_method.us_bank_account',
-            'latest_charge',
-            'latest_charge.outcome',
-            'latest_charge.refunds',
-            'latest_charge.balance_transaction',
-            'latest_charge.transfer_data',
-            'latest_charge.payment_method_details',
-            'customer',
-            'application',
-            'on_behalf_of',
-            'review',
-            'source',
-            'transfer_data.destination',
-          ],
-        });
+        try {
+          payment = await this.stripe!.paymentIntents.retrieve(id, {
+            expand: [
+              'payment_method',
+              'payment_method.us_bank_account',
+              'latest_charge',
+              'latest_charge.outcome',
+              'latest_charge.refunds',
+              'latest_charge.balance_transaction',
+              'latest_charge.transfer_data',
+              'latest_charge.payment_method_details',
+              'customer',
+              'application',
+              'on_behalf_of',
+              'review',
+              'source',
+              'transfer_data.destination',
+            ],
+          });
+        } catch (piError: any) {
+          // If PaymentIntent retrieval fails, try Connect accounts (limit to 10 for performance)
+          if (
+            piError.type === 'StripeInvalidRequestError' ||
+            piError.code === 'resource_missing'
+          ) {
+            try {
+              const accounts = await this.stripe!.accounts.list({ limit: 20 });
+
+              // Try parallel requests but limit to first 10 accounts
+              const accountPromises = accounts.data
+                .slice(0, 10)
+                .map(async (account) => {
+                  try {
+                    const connectPayment =
+                      await this.stripe!.paymentIntents.retrieve(
+                        id,
+                        {
+                          expand: [
+                            'payment_method',
+                            'payment_method.us_bank_account',
+                            'latest_charge',
+                            'latest_charge.outcome',
+                            'latest_charge.refunds',
+                            'latest_charge.balance_transaction',
+                            'latest_charge.transfer_data',
+                            'latest_charge.payment_method_details',
+                            'customer',
+                            'application',
+                            'on_behalf_of',
+                            'review',
+                            'source',
+                            'transfer_data.destination',
+                          ],
+                        },
+                        {
+                          stripeAccount: account.id,
+                        },
+                      );
+                    return { payment: connectPayment, accountId: account.id };
+                  } catch (connectError: any) {
+                    return null;
+                  }
+                });
+
+              const results = await Promise.all(accountPromises);
+              const foundResult = results.find((result) => result !== null);
+
+              if (foundResult) {
+                payment = foundResult.payment;
+                stripeAccount = foundResult.accountId;
+              } else {
+                throw new Error(
+                  `PaymentIntent ${id} not found. It might be on a Connect account ` +
+                    `or may not exist in the current Stripe account. Original error: ${piError.message}`,
+                );
+              }
+            } catch (searchError: any) {
+              throw new Error(
+                `PaymentIntent ${id} not found. It might be on a Connect account ` +
+                  `or may not exist in the current Stripe account. Original error: ${piError.message}`,
+              );
+            }
+          } else {
+            throw piError;
+          }
+        }
       }
     } catch (error: any) {
       // Handle Stripe API errors
@@ -1547,7 +1876,7 @@ export class StripeService {
           // For charges, provide more context
           throw new Error(
             `Charge ${id} not found. ${errorMessage}. ` +
-            `This charge might be on a Connect account or may not exist in the current Stripe account.`
+              `This charge might be on a Connect account or may not exist in the current Stripe account.`,
           );
         } else if (id.startsWith('py_')) {
           // For payment objects, the error should already be handled above
@@ -1582,10 +1911,12 @@ export class StripeService {
         if (charge && charge.payment_method_details) {
           const pmDetails = charge.payment_method_details;
           // Try to get expanded payment_method if available
-          const expandedPm = typeof charge.payment_method === 'object' && charge.payment_method !== null
-            ? charge.payment_method
-            : null;
-          
+          const expandedPm =
+            typeof charge.payment_method === 'object' &&
+            charge.payment_method !== null
+              ? charge.payment_method
+              : null;
+
           return {
             id: expandedPm?.id || charge.payment_method || undefined,
             object: expandedPm?.object || 'payment_method',
@@ -1599,53 +1930,113 @@ export class StripeService {
               ? {
                   brand: pmDetails.card.brand,
                   last4: pmDetails.card.last4,
-                  exp_month: expandedPm?.card?.exp_month,
-                  exp_year: expandedPm?.card?.exp_year,
-                  funding: expandedPm?.card?.funding,
+                  exp_month:
+                    expandedPm?.card?.exp_month || pmDetails.card.exp_month,
+                  exp_year:
+                    expandedPm?.card?.exp_year || pmDetails.card.exp_year,
+                  funding: expandedPm?.card?.funding || pmDetails.card.funding,
+                  fingerprint:
+                    pmDetails.card.fingerprint || expandedPm?.card?.fingerprint,
+                  country: pmDetails.card.country || expandedPm?.card?.country,
+                  network: pmDetails.card.network || expandedPm?.card?.network,
+                  checks: pmDetails.card.checks
+                    ? {
+                        cvc_check: pmDetails.card.checks.cvc_check,
+                        address_line1_check:
+                          pmDetails.card.checks.address_line1_check,
+                        address_postal_code_check:
+                          pmDetails.card.checks.address_postal_code_check,
+                      }
+                    : undefined,
+                  wallet: pmDetails.card.wallet || expandedPm?.card?.wallet,
                 }
               : undefined,
             us_bank_account: pmDetails.us_bank_account
               ? {
-                  account_holder_type: expandedPm?.us_bank_account?.account_holder_type,
+                  account_holder_type:
+                    expandedPm?.us_bank_account?.account_holder_type,
                   account_type: expandedPm?.us_bank_account?.account_type,
-                  bank_name: pmDetails.us_bank_account.bank_name || expandedPm?.us_bank_account?.bank_name,
-                  financial_connections_account: expandedPm?.us_bank_account?.financial_connections_account || null,
+                  bank_name:
+                    pmDetails.us_bank_account.bank_name ||
+                    expandedPm?.us_bank_account?.bank_name,
+                  financial_connections_account:
+                    expandedPm?.us_bank_account
+                      ?.financial_connections_account || null,
                   fingerprint: expandedPm?.us_bank_account?.fingerprint,
-                  last4: pmDetails.us_bank_account.last4 || expandedPm?.us_bank_account?.last4,
-                  networks: expandedPm?.us_bank_account?.networks || pmDetails.us_bank_account.networks || undefined,
-                  routing_number: pmDetails.us_bank_account.routing_number || expandedPm?.us_bank_account?.routing_number,
-                  status_details: expandedPm?.us_bank_account?.status_details || {},
+                  last4:
+                    pmDetails.us_bank_account.last4 ||
+                    expandedPm?.us_bank_account?.last4,
+                  networks:
+                    expandedPm?.us_bank_account?.networks ||
+                    pmDetails.us_bank_account.networks ||
+                    undefined,
+                  routing_number:
+                    pmDetails.us_bank_account.routing_number ||
+                    expandedPm?.us_bank_account?.routing_number,
+                  status_details:
+                    expandedPm?.us_bank_account?.status_details || {},
                 }
               : expandedPm?.us_bank_account
-              ? {
-                  account_holder_type: expandedPm.us_bank_account.account_holder_type,
-                  account_type: expandedPm.us_bank_account.account_type,
-                  bank_name: expandedPm.us_bank_account.bank_name,
-                  financial_connections_account: expandedPm.us_bank_account.financial_connections_account || null,
-                  fingerprint: expandedPm.us_bank_account.fingerprint,
-                  last4: expandedPm.us_bank_account.last4,
-                  networks: expandedPm.us_bank_account.networks || undefined,
-                  routing_number: expandedPm.us_bank_account.routing_number,
-                  status_details: expandedPm.us_bank_account.status_details || {},
-                }
-              : undefined,
-            billing_details: charge.billing_details || expandedPm?.billing_details
-              ? {
-                  name: charge.billing_details?.name || expandedPm?.billing_details?.name,
-                  email: charge.billing_details?.email || expandedPm?.billing_details?.email,
-                  phone: charge.billing_details?.phone || expandedPm?.billing_details?.phone,
-                  address: charge.billing_details?.address || expandedPm?.billing_details?.address
-                    ? {
-                        line1: (charge.billing_details?.address || expandedPm?.billing_details?.address)?.line1,
-                        line2: (charge.billing_details?.address || expandedPm?.billing_details?.address)?.line2,
-                        city: (charge.billing_details?.address || expandedPm?.billing_details?.address)?.city,
-                        state: (charge.billing_details?.address || expandedPm?.billing_details?.address)?.state,
-                        postal_code: (charge.billing_details?.address || expandedPm?.billing_details?.address)?.postal_code,
-                        country: (charge.billing_details?.address || expandedPm?.billing_details?.address)?.country,
-          }
-        : undefined,
-                }
-              : undefined,
+                ? {
+                    account_holder_type:
+                      expandedPm.us_bank_account.account_holder_type,
+                    account_type: expandedPm.us_bank_account.account_type,
+                    bank_name: expandedPm.us_bank_account.bank_name,
+                    financial_connections_account:
+                      expandedPm.us_bank_account
+                        .financial_connections_account || null,
+                    fingerprint: expandedPm.us_bank_account.fingerprint,
+                    last4: expandedPm.us_bank_account.last4,
+                    networks: expandedPm.us_bank_account.networks || undefined,
+                    routing_number: expandedPm.us_bank_account.routing_number,
+                    status_details:
+                      expandedPm.us_bank_account.status_details || {},
+                  }
+                : undefined,
+            billing_details:
+              charge.billing_details || expandedPm?.billing_details
+                ? {
+                    name:
+                      charge.billing_details?.name ||
+                      expandedPm?.billing_details?.name,
+                    email:
+                      charge.billing_details?.email ||
+                      expandedPm?.billing_details?.email,
+                    phone:
+                      charge.billing_details?.phone ||
+                      expandedPm?.billing_details?.phone,
+                    address:
+                      charge.billing_details?.address ||
+                      expandedPm?.billing_details?.address
+                        ? {
+                            line1: (
+                              charge.billing_details?.address ||
+                              expandedPm?.billing_details?.address
+                            )?.line1,
+                            line2: (
+                              charge.billing_details?.address ||
+                              expandedPm?.billing_details?.address
+                            )?.line2,
+                            city: (
+                              charge.billing_details?.address ||
+                              expandedPm?.billing_details?.address
+                            )?.city,
+                            state: (
+                              charge.billing_details?.address ||
+                              expandedPm?.billing_details?.address
+                            )?.state,
+                            postal_code: (
+                              charge.billing_details?.address ||
+                              expandedPm?.billing_details?.address
+                            )?.postal_code,
+                            country: (
+                              charge.billing_details?.address ||
+                              expandedPm?.billing_details?.address
+                            )?.country,
+                          }
+                        : undefined,
+                  }
+                : undefined,
           };
         }
         // For PaymentIntent
@@ -1667,6 +2058,18 @@ export class StripeService {
                   exp_month: pm.card.exp_month,
                   exp_year: pm.card.exp_year,
                   funding: pm.card.funding,
+                  fingerprint: pm.card.fingerprint,
+                  country: pm.card.country,
+                  network: pm.card.network,
+                  checks: pm.card.checks
+                    ? {
+                        cvc_check: pm.card.checks.cvc_check,
+                        address_line1_check: pm.card.checks.address_line1_check,
+                        address_postal_code_check:
+                          pm.card.checks.address_postal_code_check,
+                      }
+                    : undefined,
+                  wallet: pm.card.wallet,
                 }
               : undefined,
             us_bank_account: pm.us_bank_account
@@ -1674,7 +2077,8 @@ export class StripeService {
                   account_holder_type: pm.us_bank_account.account_holder_type,
                   account_type: pm.us_bank_account.account_type,
                   bank_name: pm.us_bank_account.bank_name,
-                  financial_connections_account: pm.us_bank_account.financial_connections_account || null,
+                  financial_connections_account:
+                    pm.us_bank_account.financial_connections_account || null,
                   fingerprint: pm.us_bank_account.fingerprint,
                   last4: pm.us_bank_account.last4,
                   networks: pm.us_bank_account.networks || undefined,
@@ -1760,12 +2164,16 @@ export class StripeService {
       // Calculate Stripe processing fees from balance transaction
       stripe_fee: balanceTransaction?.fee || 0,
       // Payment reference (from charge payment method details for us_bank_account)
-      payment_reference: latestCharge?.payment_method_details?.us_bank_account?.payment_reference || 
-                        latestCharge?.payment_method_details?.us_bank_account?.reference_number ||
-                        latestCharge?.payment_method_details?.us_bank_account?.mandate?.payment_method_details?.us_bank_account?.payment_reference ||
-                        (charge?.payment_method_details?.us_bank_account?.payment_reference) ||
-                        (charge?.payment_method_details?.us_bank_account?.reference_number) ||
-                        undefined,
+      payment_reference:
+        latestCharge?.payment_method_details?.us_bank_account
+          ?.payment_reference ||
+        latestCharge?.payment_method_details?.us_bank_account
+          ?.reference_number ||
+        latestCharge?.payment_method_details?.us_bank_account?.mandate
+          ?.payment_method_details?.us_bank_account?.payment_reference ||
+        charge?.payment_method_details?.us_bank_account?.payment_reference ||
+        charge?.payment_method_details?.us_bank_account?.reference_number ||
+        undefined,
 
       // Charge reference
       charge_id: latestCharge?.id || undefined,
@@ -1779,12 +2187,14 @@ export class StripeService {
       canceled_at: payment.canceled_at || null,
       cancellation_reason: payment.cancellation_reason || null,
       client_secret: payment.client_secret || undefined,
-      excluded_payment_method_types: payment.excluded_payment_method_types || null,
+      excluded_payment_method_types:
+        payment.excluded_payment_method_types || null,
       last_payment_error: payment.last_payment_error || null,
       livemode: payment.livemode || false,
       next_action: payment.next_action || null,
       on_behalf_of: payment.on_behalf_of || null,
-      payment_method_configuration_details: payment.payment_method_configuration_details || null,
+      payment_method_configuration_details:
+        payment.payment_method_configuration_details || null,
       payment_method_options: payment.payment_method_options || undefined,
       processing: payment.processing || null,
       receipt_email: payment.receipt_email || null,
@@ -1795,10 +2205,12 @@ export class StripeService {
       statement_descriptor: payment.statement_descriptor || undefined,
       statement_descriptor_suffix: payment.statement_descriptor_suffix || null,
       transfer_data: payment.transfer_data || null,
-      transfer_group: payment.transfer_group || latestCharge?.transfer_group || null,
-      latest_charge_id: typeof payment.latest_charge === 'string' 
-        ? payment.latest_charge 
-        : payment.latest_charge?.id || undefined,
+      transfer_group:
+        payment.transfer_group || latestCharge?.transfer_group || null,
+      latest_charge_id:
+        typeof payment.latest_charge === 'string'
+          ? payment.latest_charge
+          : payment.latest_charge?.id || undefined,
     };
   }
 
@@ -1843,7 +2255,7 @@ export class StripeService {
     return { transactions: result, summary };
   }
 
-  async getAllTransactionsWithSummary(params: { limit?: number }) {
+  async getAllTransactionsWithSummary() {
     this.ensureStripe();
     let allTransactions: any[] = [];
     let allSummary = {
@@ -2049,14 +2461,20 @@ export class StripeService {
       const refunds = charge.refunds?.data || [];
       const balanceTransaction = charge.balance_transaction;
       const isRefunded = charge.refunded || refunds.length > 0;
-      const refundedAmount = charge.amount_refunded || refunds.reduce(
-        (sum: number, refund: any) => sum + (refund.amount || 0),
-        0,
-      );
+      const refundedAmount =
+        charge.amount_refunded ||
+        refunds.reduce(
+          (sum: number, refund: any) => sum + (refund.amount || 0),
+          0,
+        );
 
       // Handle balance transaction - it can be a string ID or an expanded object
       let balanceTransactionDetails: any = undefined;
-      if (balanceTransaction && typeof balanceTransaction === 'object' && balanceTransaction !== null) {
+      if (
+        balanceTransaction &&
+        typeof balanceTransaction === 'object' &&
+        balanceTransaction !== null
+      ) {
         balanceTransactionDetails = {
           id: (balanceTransaction as any).id,
           amount: (balanceTransaction as any).amount,
@@ -2079,19 +2497,23 @@ export class StripeService {
       if (charge.payment_method_details) {
         paymentMethodDetails = {
           type: charge.payment_method_details.type,
-          card: charge.payment_method_details.card ? {
-            brand: charge.payment_method_details.card.brand,
-            last4: charge.payment_method_details.card.last4,
-            exp_month: charge.payment_method_details.card.exp_month,
-            exp_year: charge.payment_method_details.card.exp_year,
-            funding: charge.payment_method_details.card.funding,
-            country: charge.payment_method_details.card.country,
-            fingerprint: charge.payment_method_details.card.fingerprint,
-            network: charge.payment_method_details.card.network,
-            network_transaction_id: charge.payment_method_details.card.network_transaction_id,
-            authorization_code: charge.payment_method_details.card.authorization_code,
-            checks: charge.payment_method_details.card.checks,
-          } : undefined,
+          card: charge.payment_method_details.card
+            ? {
+                brand: charge.payment_method_details.card.brand,
+                last4: charge.payment_method_details.card.last4,
+                exp_month: charge.payment_method_details.card.exp_month,
+                exp_year: charge.payment_method_details.card.exp_year,
+                funding: charge.payment_method_details.card.funding,
+                country: charge.payment_method_details.card.country,
+                fingerprint: charge.payment_method_details.card.fingerprint,
+                network: charge.payment_method_details.card.network,
+                network_transaction_id:
+                  charge.payment_method_details.card.network_transaction_id,
+                authorization_code:
+                  charge.payment_method_details.card.authorization_code,
+                checks: charge.payment_method_details.card.checks,
+              }
+            : undefined,
         };
       }
 
@@ -2121,49 +2543,65 @@ export class StripeService {
         // Additional charge fields
         is_refunded: isRefunded,
         refunded_amount: refundedAmount,
-        decline_reason: charge.outcome?.reason || charge.failure_code || undefined,
+        decline_reason:
+          charge.outcome?.reason || charge.failure_code || undefined,
         failure_message: charge.failure_message || undefined,
         failure_code: charge.failure_code || undefined,
-        failure_balance_transaction: charge.failure_balance_transaction || undefined,
+        failure_balance_transaction:
+          charge.failure_balance_transaction || undefined,
         risk_level: charge.outcome?.risk_level || undefined,
-        outcome: charge.outcome ? {
-          network_status: charge.outcome.network_status,
-          reason: charge.outcome.reason,
-          risk_level: charge.outcome.risk_level,
-          risk_score: charge.outcome.risk_score,
-          seller_message: charge.outcome.seller_message,
-          type: charge.outcome.type,
-          advice_code: charge.outcome.advice_code,
-          network_advice_code: charge.outcome.network_advice_code,
-          network_decline_code: charge.outcome.network_decline_code,
-        } : undefined,
+        outcome: charge.outcome
+          ? {
+              network_status: charge.outcome.network_status,
+              reason: charge.outcome.reason,
+              risk_level: charge.outcome.risk_level,
+              risk_score: charge.outcome.risk_score,
+              seller_message: charge.outcome.seller_message,
+              type: charge.outcome.type,
+              advice_code: charge.outcome.advice_code,
+              network_advice_code: charge.outcome.network_advice_code,
+              network_decline_code: charge.outcome.network_decline_code,
+            }
+          : undefined,
         balance_transaction: balanceTransactionDetails,
-        balance_transaction_id: typeof balanceTransaction === 'string' ? balanceTransaction : balanceTransaction?.id,
+        balance_transaction_id:
+          typeof balanceTransaction === 'string'
+            ? balanceTransaction
+            : balanceTransaction?.id,
         application: charge.application || null,
         application_fee: charge.application_fee || null,
         application_fee_amount: charge.application_fee_amount || null,
-        billing_details: charge.billing_details ? {
-          address: charge.billing_details.address ? {
-            city: charge.billing_details.address.city,
-            country: charge.billing_details.address.country,
-            line1: charge.billing_details.address.line1,
-            line2: charge.billing_details.address.line2,
-            postal_code: charge.billing_details.address.postal_code,
-            state: charge.billing_details.address.state,
-          } : undefined,
-          email: charge.billing_details.email,
-          name: charge.billing_details.name,
-          phone: charge.billing_details.phone,
-          tax_id: charge.billing_details.tax_id,
-        } : undefined,
-        calculated_statement_descriptor: charge.calculated_statement_descriptor || undefined,
+        billing_details: charge.billing_details
+          ? {
+              address: charge.billing_details.address
+                ? {
+                    city: charge.billing_details.address.city,
+                    country: charge.billing_details.address.country,
+                    line1: charge.billing_details.address.line1,
+                    line2: charge.billing_details.address.line2,
+                    postal_code: charge.billing_details.address.postal_code,
+                    state: charge.billing_details.address.state,
+                  }
+                : undefined,
+              email: charge.billing_details.email,
+              name: charge.billing_details.name,
+              phone: charge.billing_details.phone,
+              tax_id: charge.billing_details.tax_id,
+            }
+          : undefined,
+        calculated_statement_descriptor:
+          charge.calculated_statement_descriptor || undefined,
         statement_descriptor: charge.statement_descriptor || undefined,
-        statement_descriptor_suffix: charge.statement_descriptor_suffix || undefined,
+        statement_descriptor_suffix:
+          charge.statement_descriptor_suffix || undefined,
         captured: charge.captured,
         paid: charge.paid,
         dispute: (charge as any).dispute || null,
         disputed: charge.disputed || false,
-        payment_intent: typeof charge.payment_intent === 'string' ? charge.payment_intent : charge.payment_intent?.id || undefined,
+        payment_intent:
+          typeof charge.payment_intent === 'string'
+            ? charge.payment_intent
+            : charge.payment_intent?.id || undefined,
         receipt_email: charge.receipt_email || undefined,
         receipt_number: charge.receipt_number || undefined,
         receipt_url: charge.receipt_url || undefined,
@@ -2371,7 +2809,7 @@ export class StripeService {
     };
   }
 
-  async getAllPayoutsWithSummary(params: { limit?: number }) {
+  async getAllPayoutsWithSummary() {
     this.ensureStripe();
     let allPayouts: any[] = [];
     let allSummary = {
@@ -2679,13 +3117,13 @@ export class StripeService {
     // Determine start and end times
     let startTime: number;
     let endTime: number;
-    
+
     if (params?.date) {
       // Use specific date - get data for that entire day
       const selectedDate = new Date(params.date);
       selectedDate.setHours(0, 0, 0, 0);
       startTime = Math.floor(selectedDate.getTime() / 1000);
-      
+
       const endOfDay = new Date(selectedDate);
       endOfDay.setHours(23, 59, 59, 999);
       endTime = Math.floor(endOfDay.getTime() / 1000);
@@ -2701,17 +3139,18 @@ export class StripeService {
     const dateRange = endTime - startTime;
     const daysInRange = dateRange / (24 * 60 * 60);
     const groupBy = params?.groupBy || (daysInRange <= 1 ? 'hour' : 'day');
-    
+
     const cacheKey = `volume_data_${startTime}_${endTime}_${groupBy}`;
-    
+
     const cached = this.cache.get(cacheKey);
     if (cached) {
-      console.log(`Cache hit for volume data: ${startTime}_${endTime}_${groupBy}`);
+      console.log(
+        `Cache hit for volume data: ${startTime}_${endTime}_${groupBy}`,
+      );
       return cached;
     }
 
     try {
-
       // Fetch payment intents with latest_charge expanded to get net amounts
       const payments = await this.stripe!.paymentIntents.list({
         limit: 100,
@@ -2726,7 +3165,10 @@ export class StripeService {
       });
 
       // Group data by time period
-      const volumeMap = new Map<string, { gross: number; net: number; count: number; newCustomers: number }>();
+      const volumeMap = new Map<
+        string,
+        { gross: number; net: number; count: number; newCustomers: number }
+      >();
 
       payments.data.forEach((payment) => {
         if (payment.status !== 'succeeded') return;
@@ -2745,12 +3187,13 @@ export class StripeService {
         }
 
         const gross = payment.amount || 0;
-        
+
         // Get net amount from balance transaction (amount after fees)
         let net = gross;
         const paymentAny = payment as any;
-        const balanceTransaction = paymentAny.latest_charge?.balance_transaction;
-        
+        const balanceTransaction =
+          paymentAny.latest_charge?.balance_transaction;
+
         if (balanceTransaction && typeof balanceTransaction === 'object') {
           net = balanceTransaction.net || gross;
         } else {
@@ -2758,7 +3201,12 @@ export class StripeService {
           net = Math.round(gross * 0.971 - 30);
         }
 
-        const existing = volumeMap.get(timeKey) || { gross: 0, net: 0, count: 0, newCustomers: 0 };
+        const existing = volumeMap.get(timeKey) || {
+          gross: 0,
+          net: 0,
+          count: 0,
+          newCustomers: 0,
+        };
         volumeMap.set(timeKey, {
           gross: existing.gross + gross,
           net: existing.net + net,
@@ -2782,7 +3230,12 @@ export class StripeService {
           timeKey = date.toISOString().split('T')[0];
         }
 
-        const existing = volumeMap.get(timeKey) || { gross: 0, net: 0, count: 0, newCustomers: 0 };
+        const existing = volumeMap.get(timeKey) || {
+          gross: 0,
+          net: 0,
+          count: 0,
+          newCustomers: 0,
+        };
         volumeMap.set(timeKey, {
           ...existing,
           newCustomers: existing.newCustomers + 1,
@@ -2808,7 +3261,7 @@ export class StripeService {
           count: acc.count + item.count,
           newCustomers: acc.newCustomers + item.newCustomers,
         }),
-        { gross: 0, net: 0, count: 0, newCustomers: 0 }
+        { gross: 0, net: 0, count: 0, newCustomers: 0 },
       );
 
       const result = {

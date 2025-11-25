@@ -25,6 +25,15 @@ export interface StripeTransaction {
             exp_month?: number;
             exp_year?: number;
             funding?: string;
+            fingerprint?: string;
+            country?: string;
+            network?: string;
+            checks?: {
+                cvc_check?: string | null;
+                address_line1_check?: string | null;
+                address_postal_code_check?: string | null;
+            };
+            wallet?: any;
         };
         us_bank_account?: {
             account_holder_type?: string;

@@ -452,6 +452,96 @@ const TransactionDetail: React.FC = () => {
                                                     </DetailValue>
                                                 </DetailRow>
                                             )}
+                                            {paymentMethod.card.fingerprint && (
+                                                <DetailRow>
+                                                    <DetailLabel>
+                                                        Fingerprint
+                                                    </DetailLabel>
+                                                    <DetailValue>
+                                                        <Link
+                                                            href={`https://dashboard.stripe.com/payment_methods/${paymentMethod.id}`}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            sx={{
+                                                                color: '#2563eb',
+                                                            }}
+                                                        >
+                                                            {
+                                                                paymentMethod
+                                                                    .card
+                                                                    .fingerprint
+                                                            }
+                                                        </Link>
+                                                    </DetailValue>
+                                                </DetailRow>
+                                            )}
+                                            {transaction.setup_future_usage &&
+                                                paymentMethod.id && (
+                                                    <DetailRow>
+                                                        <DetailLabel>
+                                                            Reusable Payment ID
+                                                        </DetailLabel>
+                                                        <DetailValue
+                                                            sx={{
+                                                                wordBreak:
+                                                                    'break-all',
+                                                            }}
+                                                        >
+                                                            {paymentMethod.id}
+                                                        </DetailValue>
+                                                    </DetailRow>
+                                                )}
+                                            {paymentMethod.card.country && (
+                                                <DetailRow>
+                                                    <DetailLabel>
+                                                        Issuer
+                                                    </DetailLabel>
+                                                    <DetailValue>
+                                                        {
+                                                            paymentMethod.card
+                                                                .country
+                                                        }
+                                                    </DetailValue>
+                                                </DetailRow>
+                                            )}
+                                            {paymentMethod.card.checks
+                                                ?.cvc_check !== undefined &&
+                                                paymentMethod.card.checks
+                                                    ?.cvc_check !== null && (
+                                                    <DetailRow>
+                                                        <DetailLabel>
+                                                            CVC check
+                                                        </DetailLabel>
+                                                        <DetailValue>
+                                                            {
+                                                                paymentMethod
+                                                                    .card.checks
+                                                                    .cvc_check
+                                                            }
+                                                        </DetailValue>
+                                                    </DetailRow>
+                                                )}
+                                            {(paymentMethod.card.wallet ||
+                                                paymentMethod.card.country) && (
+                                                <DetailRow>
+                                                    <DetailLabel>
+                                                        Origin
+                                                    </DetailLabel>
+                                                    <DetailValue>
+                                                        {paymentMethod.card
+                                                            .wallet?.type
+                                                            ? paymentMethod.card.wallet.type
+                                                                  .charAt(0)
+                                                                  .toUpperCase() +
+                                                              paymentMethod.card.wallet.type.slice(
+                                                                  1
+                                                              )
+                                                            : paymentMethod.card
+                                                                  .country ||
+                                                              'Card'}
+                                                    </DetailValue>
+                                                </DetailRow>
+                                            )}
                                         </>
                                     )}
                                 </>
