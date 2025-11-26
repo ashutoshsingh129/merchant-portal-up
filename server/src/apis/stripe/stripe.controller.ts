@@ -1,18 +1,43 @@
-import { Controller, Get, Param, Query, Post, Body, HttpException, HttpStatus } from '@nestjs/common';
+import {
+    Controller,
+    Get,
+    Param,
+    Query,
+    Post,
+    Body,
+    Delete,
+    HttpException,
+    HttpStatus,
+    UseGuards,
+    Request,
+} from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import { StripeService } from './stripe.service';
+import { StripeKeysService } from './stripe-keys.service';
 
 @Controller('stripe')
 export class StripeController {
-  constructor(private readonly stripeService: StripeService) {}
+  constructor(
+    private readonly stripeService: StripeService,
+    private readonly stripeKeysService: StripeKeysService,
+  ) {}
+
+  // Helper to get userId from request
+  private getUserId(req: any): number {
+    return req.user?.id;
+  }
 
   @Get('transactions')
+  @UseGuards(AuthGuard('jwt'))
   listTransactions(
+    @Request() req: any,
     @Query('limit') limit?: string,
     @Query('starting_after') starting_after?: string,
     @Query('ending_before') ending_before?: string,
     @Query('customer') customer?: string,
   ) {
-    return this.stripeService.listTransactions({
+    const userId = this.getUserId(req);
+    return this.stripeService.listTransactions(userId, {
       limit: limit ? parseInt(limit) : undefined,
       starting_after,
       ending_before,
@@ -21,9 +46,11 @@ export class StripeController {
   }
 
   @Get('transactions/:id')
-  async getTransaction(@Param('id') id: string) {
+  @UseGuards(AuthGuard('jwt'))
+  async getTransaction(@Request() req: any, @Param('id') id: string) {
     try {
-      return await this.stripeService.getTransaction(id);
+      const userId = this.getUserId(req);
+      return await this.stripeService.getTransaction(userId, id);
     } catch (error: any) {
       throw new HttpException(
         error.message || 'Failed to fetch transaction',
@@ -33,13 +60,16 @@ export class StripeController {
   }
 
   @Get('transactions-with-summary')
+  @UseGuards(AuthGuard('jwt'))
   listTransactionsWithSummary(
+    @Request() req: any,
     @Query('limit') limit?: string,
     @Query('starting_after') starting_after?: string,
     @Query('ending_before') ending_before?: string,
     @Query('customer') customer?: string,
   ) {
-    return this.stripeService.listTransactionsWithSummary({
+    const userId = this.getUserId(req);
+    return this.stripeService.listTransactionsWithSummary(userId, {
       limit: limit ? parseInt(limit) : undefined,
       starting_after,
       ending_before,
@@ -48,26 +78,29 @@ export class StripeController {
   }
 
   @Get('all-transactions')
-  getAllTransactions(
-    @Query('limit') limit?: string,
-  ) {
-    return this.stripeService.getAllTransactionsWithSummary({
-      limit: limit ? parseInt(limit) : undefined,
-    });
+  @UseGuards(AuthGuard('jwt'))
+  getAllTransactions(@Request() req: any) {
+    const userId = this.getUserId(req);
+    return this.stripeService.getAllTransactionsWithSummary(userId);
   }
 
   @Get('accounts')
-  getAccounts() {
-    return this.stripeService.getConnectedAccounts();
+  @UseGuards(AuthGuard('jwt'))
+  getAccounts(@Request() req: any) {
+    const userId = this.getUserId(req);
+    return this.stripeService.getConnectedAccounts(userId);
   }
 
   @Get('payouts')
+  @UseGuards(AuthGuard('jwt'))
   listPayouts(
+    @Request() req: any,
     @Query('limit') limit?: string,
     @Query('starting_after') starting_after?: string,
     @Query('ending_before') ending_before?: string,
   ) {
-    return this.stripeService.listPayouts({
+    const userId = this.getUserId(req);
+    return this.stripeService.listPayouts(userId, {
       limit: limit ? parseInt(limit) : undefined,
       starting_after,
       ending_before,
@@ -75,28 +108,31 @@ export class StripeController {
   }
 
   @Get('payouts/:id')
-  getPayout(@Param('id') id: string) {
-    return this.stripeService.getPayout(id);
+  @UseGuards(AuthGuard('jwt'))
+  getPayout(@Request() req: any, @Param('id') id: string) {
+    const userId = this.getUserId(req);
+    return this.stripeService.getPayout(userId, id);
   }
 
   @Get('all-payouts')
-  getAllPayouts(
-    @Query('limit') limit?: string,
-  ) {
-    return this.stripeService.getAllPayoutsWithSummary({
-      limit: limit ? parseInt(limit) : undefined,
-    });
+  @UseGuards(AuthGuard('jwt'))
+  getAllPayouts(@Request() req: any) {
+    const userId = this.getUserId(req);
+    return this.stripeService.getAllPayoutsWithSummary(userId);
   }
 
   // NEW OPTIMIZED ENDPOINTS FOR FAST LOADING
   
   @Get('transactions-fast')
+  @UseGuards(AuthGuard('jwt'))
   getTransactionsFast(
+    @Request() req: any,
     @Query('limit') limit?: string,
     @Query('page') page?: string,
     @Query('account') account?: string,
   ) {
-    return this.stripeService.getTransactionsFast({
+    const userId = this.getUserId(req);
+    return this.stripeService.getTransactionsFast(userId, {
       limit: limit ? parseInt(limit) : undefined,
       page: page ? parseInt(page) : undefined,
       account,
@@ -104,7 +140,9 @@ export class StripeController {
   }
 
   @Get('all-transactions-fast')
+  @UseGuards(AuthGuard('jwt'))
   getAllTransactionsFast(
+    @Request() req: any,
     @Query('limit') limit?: string,
     @Query('page') page?: string,
     @Query('status') status?: string,
@@ -115,12 +153,13 @@ export class StripeController {
     @Query('currency') currency?: string,
     @Query('paymentMethod') paymentMethod?: string,
   ) {
+    const userId = this.getUserId(req);
     // Parse statusFilter if provided (comma-separated string)
     const statusFilterArray = statusFilter
       ? statusFilter.split(',').map((s) => s.trim()).filter((s) => s.length > 0)
       : undefined;
 
-    return this.stripeService.getAllTransactionsFast({
+    return this.stripeService.getAllTransactionsFast(userId, {
       limit: limit ? parseInt(limit) : undefined,
       page: page ? parseInt(page) : undefined,
       status: status,
@@ -134,12 +173,15 @@ export class StripeController {
   }
 
   @Get('all-payouts-fast')
+  @UseGuards(AuthGuard('jwt'))
   getAllPayoutsFast(
+    @Request() req: any,
     @Query('limit') limit?: string,
     @Query('page') page?: string,
     @Query('status') status?: string,
   ) {
-    return this.stripeService.getAllPayoutsFast({
+    const userId = this.getUserId(req);
+    return this.stripeService.getAllPayoutsFast(userId, {
       limit: limit ? parseInt(limit) : undefined,
       page: page ? parseInt(page) : undefined,
       status: status,
@@ -147,12 +189,15 @@ export class StripeController {
   }
 
   @Get('payouts-fast')
+  @UseGuards(AuthGuard('jwt'))
   getPayoutsFast(
+    @Request() req: any,
     @Query('limit') limit?: string,
     @Query('page') page?: string,
     @Query('account') account?: string,
   ) {
-    return this.stripeService.getPayoutsFast({
+    const userId = this.getUserId(req);
+    return this.stripeService.getPayoutsFast(userId, {
       limit: limit ? parseInt(limit) : undefined,
       page: page ? parseInt(page) : undefined,
       account,
@@ -160,23 +205,28 @@ export class StripeController {
   }
 
   @Get('summary-fast')
-  getSummaryFast(
-    @Query('account') account?: string,
-  ) {
-    return this.stripeService.getSummaryFast(account);
+  @UseGuards(AuthGuard('jwt'))
+  getSummaryFast(@Request() req: any, @Query('account') account?: string) {
+    const userId = this.getUserId(req);
+    return this.stripeService.getSummaryFast(userId, account);
   }
 
   @Get('accounts-fast')
-  getAccountsFast() {
-    return this.stripeService.getAccountsFast();
+  @UseGuards(AuthGuard('jwt'))
+  getAccountsFast(@Request() req: any) {
+    const userId = this.getUserId(req);
+    return this.stripeService.getAccountsFast(userId);
   }
 
   @Get('all-customers-fast')
+  @UseGuards(AuthGuard('jwt'))
   getAllCustomersFast(
+    @Request() req: any,
     @Query('limit') limit?: string,
     @Query('page') page?: string,
   ) {
-    return this.stripeService.getAllCustomersFast({
+    const userId = this.getUserId(req);
+    return this.stripeService.getAllCustomersFast(userId, {
       limit: limit ? parseInt(limit) : undefined,
       page: page ? parseInt(page) : undefined,
     });
@@ -189,16 +239,92 @@ export class StripeController {
   }
 
   @Get('volume-data')
+  @UseGuards(AuthGuard('jwt'))
   getVolumeData(
+    @Request() req: any,
     @Query('days') days?: string,
     @Query('groupBy') groupBy?: 'hour' | 'day',
     @Query('date') date?: string,
   ) {
-    return this.stripeService.getVolumeData({
+    const userId = this.getUserId(req);
+    return this.stripeService.getVolumeData(userId, {
       days: days ? parseInt(days) : undefined,
       groupBy,
       date: date ? new Date(date) : undefined,
     });
+  }
+
+  // Stripe Keys Management Endpoints
+  @Post('keys')
+  @UseGuards(AuthGuard('jwt'))
+  async storeKeys(@Request() req: any, @Body() body: { secret_key: string; publishable_key: string }) {
+    try {
+      const userId = req.user.id;
+      return await this.stripeKeysService.storeKeys(userId, body.secret_key, body.publishable_key);
+    } catch (error: any) {
+      throw new HttpException(
+        {
+          success: false,
+          error: error.message || 'Failed to save Stripe keys',
+          message: error.message || 'Failed to save Stripe keys',
+        },
+        error.status || HttpStatus.BAD_REQUEST,
+      );
+    }
+  }
+
+  @Get('keys/status')
+  @UseGuards(AuthGuard('jwt'))
+  async checkKeysStatus(@Request() req: any) {
+    try {
+      const userId = req.user.id;
+      return await this.stripeKeysService.checkKeysStatus(userId);
+    } catch (error: any) {
+      throw new HttpException(
+        {
+          success: false,
+          error: error.message || 'Failed to check keys status',
+          message: error.message || 'Failed to check keys status',
+        },
+        error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Get('keys')
+  @UseGuards(AuthGuard('jwt'))
+  async getKeys(@Request() req: any) {
+    try {
+      const userId = req.user.id;
+      return await this.stripeKeysService.getKeys(userId);
+    } catch (error: any) {
+      throw new HttpException(
+        {
+          success: false,
+          error: error.message || 'Failed to retrieve Stripe keys',
+          message: error.message || 'Failed to retrieve Stripe keys',
+        },
+        error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Delete('keys')
+  @UseGuards(AuthGuard('jwt'))
+  async deleteKeys(@Request() req: any) {
+    try {
+      const userId = req.user.id;
+      return await this.stripeKeysService.deleteKeys(userId);
+    } catch (error: any) {
+      throw new HttpException(
+        {
+          success: false,
+          error: error.message || 'Failed to clear Stripe keys',
+          message: error.message || 'Failed to clear Stripe keys',
+        },
+        error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
 }
 

@@ -1,7 +1,7 @@
 export const getEnvironmentConfig = () => {
     return {
         API_BASE_URL:
-            process.env.REACT_APP_API_BASE_URL || 'http://localhost:3001/api',
+            process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000/api',
         ENVIRONMENT: process.env.REACT_APP_ENVIRONMENT || 'development',
         APP_NAME: process.env.REACT_APP_APP_NAME || 'React Template FE',
         VERSION: process.env.REACT_APP_VERSION || '1.0.0',

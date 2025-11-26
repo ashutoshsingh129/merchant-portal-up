@@ -253,6 +253,18 @@ export class StripeService {
             process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000/api';
     }
 
+    // Helper method to get auth headers
+    private getAuthHeaders(): HeadersInit {
+        const token = localStorage.getItem('authToken');
+        const headers: HeadersInit = {
+            'Content-Type': 'application/json',
+        };
+        if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+        }
+        return headers;
+    }
+
     // Get transactions with pagination and filters
     async getTransactions(params?: {
         limit?: number;
@@ -288,7 +300,10 @@ export class StripeService {
             });
 
             const res = await fetch(
-                `${this.baseUrl}/stripe/transactions?${query.toString()}`
+                `${this.baseUrl}/stripe/transactions?${query.toString()}`,
+                {
+                    headers: this.getAuthHeaders(),
+                }
             );
             if (!res.ok) throw new Error('Failed to fetch transactions');
             const body = await res.json();
@@ -321,7 +336,10 @@ export class StripeService {
     ): Promise<ApiResponse<StripeTransaction | null>> {
         try {
             const res = await fetch(
-                `${this.baseUrl}/stripe/transactions/${transactionId}`
+                `${this.baseUrl}/stripe/transactions/${transactionId}`,
+                {
+                    headers: this.getAuthHeaders(),
+                }
             );
             if (!res.ok) throw new Error('Failed to fetch transaction');
             const transaction = await res.json();
@@ -399,7 +417,10 @@ export class StripeService {
             });
 
             const res = await fetch(
-                `${this.baseUrl}/stripe/transactions-with-summary?${query.toString()}`
+                `${this.baseUrl}/stripe/transactions-with-summary?${query.toString()}`,
+                {
+                    headers: this.getAuthHeaders(),
+                }
             );
             if (!res.ok)
                 throw new Error('Failed to fetch transactions with summary');
@@ -514,7 +535,10 @@ export class StripeService {
             });
 
             const res = await fetch(
-                `${this.baseUrl}/stripe/all-transactions?${query.toString()}`
+                `${this.baseUrl}/stripe/all-transactions?${query.toString()}`,
+                {
+                    headers: this.getAuthHeaders(),
+                }
             );
             if (!res.ok)
                 throw new Error(
@@ -584,7 +608,10 @@ export class StripeService {
             });
 
             const res = await fetch(
-                `${this.baseUrl}/stripe/payouts?${query.toString()}`
+                `${this.baseUrl}/stripe/payouts?${query.toString()}`,
+                {
+                    headers: this.getAuthHeaders(),
+                }
             );
             if (!res.ok) throw new Error('Failed to fetch payouts');
             const body = await res.json();
@@ -617,7 +644,10 @@ export class StripeService {
     ): Promise<ApiResponse<StripePayout | null>> {
         try {
             const res = await fetch(
-                `${this.baseUrl}/stripe/payouts/${payoutId}`
+                `${this.baseUrl}/stripe/payouts/${payoutId}`,
+                {
+                    headers: this.getAuthHeaders(),
+                }
             );
             if (!res.ok) throw new Error('Failed to fetch payout');
             const payout = await res.json();
@@ -655,7 +685,10 @@ export class StripeService {
             if (params?.account) query.append('account', params.account);
 
             const res = await fetch(
-                `${this.baseUrl}/stripe/transactions-fast?${query.toString()}`
+                `${this.baseUrl}/stripe/transactions-fast?${query.toString()}`,
+                {
+                    headers: this.getAuthHeaders(),
+                }
             );
             if (!res.ok) throw new Error('Failed to fetch transactions');
             const body = await res.json();
@@ -695,7 +728,10 @@ export class StripeService {
             if (params?.account) query.append('account', params.account);
 
             const res = await fetch(
-                `${this.baseUrl}/stripe/payouts-fast?${query.toString()}`
+                `${this.baseUrl}/stripe/payouts-fast?${query.toString()}`,
+                {
+                    headers: this.getAuthHeaders(),
+                }
             );
             if (!res.ok) throw new Error('Failed to fetch payouts');
             const body = await res.json();
@@ -739,7 +775,10 @@ export class StripeService {
             if (account) query.append('account', account);
 
             const res = await fetch(
-                `${this.baseUrl}/stripe/summary-fast?${query.toString()}`
+                `${this.baseUrl}/stripe/summary-fast?${query.toString()}`,
+                {
+                    headers: this.getAuthHeaders(),
+                }
             );
             if (!res.ok) throw new Error('Failed to fetch summary');
             const body = await res.json();
@@ -786,7 +825,9 @@ export class StripeService {
         }>
     > {
         try {
-            const res = await fetch(`${this.baseUrl}/stripe/accounts-fast`);
+            const res = await fetch(`${this.baseUrl}/stripe/accounts-fast`, {
+                headers: this.getAuthHeaders(),
+            });
             if (!res.ok) throw new Error('Failed to fetch accounts');
             const body = await res.json();
 
@@ -815,9 +856,7 @@ export class StripeService {
         try {
             const res = await fetch(`${this.baseUrl}/stripe/clear-cache`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: this.getAuthHeaders(),
                 body: JSON.stringify({ pattern }),
             });
             if (!res.ok) throw new Error('Failed to clear cache');
@@ -884,7 +923,10 @@ export class StripeService {
                 query.append('paymentMethod', params.paymentMethod);
 
             const res = await fetch(
-                `${this.baseUrl}/stripe/all-transactions-fast?${query.toString()}`
+                `${this.baseUrl}/stripe/all-transactions-fast?${query.toString()}`,
+                {
+                    headers: this.getAuthHeaders(),
+                }
             );
             if (!res.ok) throw new Error('Failed to fetch all transactions');
             const body = await res.json();
@@ -946,7 +988,10 @@ export class StripeService {
             if (params?.status) query.append('status', params.status);
 
             const res = await fetch(
-                `${this.baseUrl}/stripe/all-payouts-fast?${query.toString()}`
+                `${this.baseUrl}/stripe/all-payouts-fast?${query.toString()}`,
+                {
+                    headers: this.getAuthHeaders(),
+                }
             );
             if (!res.ok) throw new Error('Failed to fetch all payouts');
             const body = await res.json();
@@ -1004,7 +1049,10 @@ export class StripeService {
             if (params?.page) query.append('page', String(params.page));
 
             const res = await fetch(
-                `${this.baseUrl}/stripe/all-customers-fast?${query.toString()}`
+                `${this.baseUrl}/stripe/all-customers-fast?${query.toString()}`,
+                {
+                    headers: this.getAuthHeaders(),
+                }
             );
             if (!res.ok) throw new Error('Failed to fetch all customers');
             const body = await res.json();
@@ -1076,7 +1124,10 @@ export class StripeService {
             }
 
             const res = await fetch(
-                `${this.baseUrl}/stripe/volume-data?${query.toString()}`
+                `${this.baseUrl}/stripe/volume-data?${query.toString()}`,
+                {
+                    headers: this.getAuthHeaders(),
+                }
             );
             if (!res.ok) throw new Error('Failed to fetch volume data');
             const body = await res.json();

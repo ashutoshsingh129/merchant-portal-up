@@ -1,5 +1,8 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import Stripe from 'stripe';
+import { stripeKeysCache } from '../../utilities/stripeKeysCache';
+import { pool } from '../../utilities/dbconfig';
+import { decrypt } from '../../utilities/encryption';
 
 // Simple in-memory cache for performance optimization
 interface CacheEntry {
@@ -43,26 +46,69 @@ class SimpleCache {
 
 @Injectable()
 export class StripeService {
-  private stripe: Stripe | null;
   private cache = new SimpleCache();
 
   constructor() {
-    const secret = (process.env.STRIPE_SECRET_KEY ||
-      process.env.REACT_APP_STRIPE_SECRET_KEY) as string | undefined;
-    this.stripe = secret ? new Stripe(secret) : null;
     // Clear cache on service initialization to ensure fresh data
     this.cache.clear();
     console.log(
-      'Stripe service initialized - all cache cleared (payouts cache disabled)',
+      '✅ Stripe service initialized - using user-specific keys from database',
     );
   }
 
-  private ensureStripe() {
-    if (!this.stripe) {
+  /**
+   * Get Stripe instance for a specific user
+   * Loads keys from cache or database if not in cache
+   */
+  private async getStripeInstanceForUser(userId: number): Promise<Stripe> {
+    // First check cache
+    let keys = stripeKeysCache.getKeys(userId);
+    
+    if (!keys.secretKey) {
+      // Keys not in cache, load from database
+      console.log(`🔄 Loading Stripe keys from database for user ${userId}`);
+      const client = await pool.connect();
+      try {
+        const result = await client.query(
+          'SELECT secret_key, publishable_key FROM stripe_keys WHERE user_id = $1 AND is_active = true ORDER BY created_at DESC LIMIT 1',
+          [userId]
+        );
+        
+        if (result.rows.length === 0) {
+          throw new ServiceUnavailableException(
+            'No Stripe keys configured for this user. Please configure your Stripe keys first.',
+          );
+        }
+        
+        const { secret_key: encryptedSecretKey, publishable_key } = result.rows[0];
+        const decryptedSecretKey = decrypt(encryptedSecretKey);
+        
+        // Update cache
+        stripeKeysCache.updateKeys(userId, decryptedSecretKey, publishable_key);
+        keys = stripeKeysCache.getKeys(userId);
+      } finally {
+        client.release();
+      }
+    }
+    
+    if (!keys.secretKey) {
       throw new ServiceUnavailableException(
-        'Stripe is not configured. Set STRIPE_SECRET_KEY in server environment.',
+        'No Stripe secret key available for this user. Please configure your Stripe keys first.',
       );
     }
+    
+    try {
+      return new Stripe(keys.secretKey);
+    } catch (error: any) {
+      console.error('Error creating Stripe instance:', error);
+      throw new ServiceUnavailableException(
+        `Failed to initialize Stripe: ${error.message}`,
+      );
+    }
+  }
+
+  private async ensureStripe(userId: number): Promise<Stripe> {
+    return await this.getStripeInstanceForUser(userId);
   }
 
   /**
@@ -115,18 +161,21 @@ export class StripeService {
   /**
    * Fast transactions loading with minimal API calls and caching
    */
-  async getTransactionsFast(params: {
-    limit?: number;
-    page?: number;
-    account?: string;
-  }) {
-    this.ensureStripe();
+  async getTransactionsFast(
+    userId: number,
+    params: {
+      limit?: number;
+      page?: number;
+      account?: string;
+    },
+  ) {
+    const stripe = await this.ensureStripe(userId);
 
     const limit = Math.min(params?.limit || 50, 100); // Cap at 100 for performance
     const page = params?.page || 1;
     const account = params?.account || 'platform';
 
-    const cacheKey = `transactions_${account}_${limit}_${page}`;
+    const cacheKey = `transactions_${userId}_${account}_${limit}_${page}`;
     const cached = this.cache.get(cacheKey);
     if (cached) {
       console.log(`Cache hit for transactions: ${account}_${limit}_${page}`);
@@ -139,12 +188,12 @@ export class StripeService {
 
       let payments;
       if (account === 'platform') {
-        payments = await this.stripe!.paymentIntents.list({
+        payments = await stripe.paymentIntents.list({
           limit,
           expand: expansions,
         });
       } else {
-        payments = await this.stripe!.paymentIntents.list(
+        payments = await stripe.paymentIntents.list(
           {
             limit,
             expand: expansions,
@@ -189,18 +238,21 @@ export class StripeService {
   /**
    * Fast payouts loading with minimal API calls and caching
    */
-  async getPayoutsFast(params: {
-    limit?: number;
-    page?: number;
-    account?: string;
-  }) {
-    this.ensureStripe();
+  async getPayoutsFast(
+    userId: number,
+    params: {
+      limit?: number;
+      page?: number;
+      account?: string;
+    },
+  ) {
+    const stripe = await this.ensureStripe(userId);
 
     const limit = Math.min(params?.limit || 50, 100); // Cap at 100 for performance
     const page = params?.page || 1;
     const account = params?.account || 'platform';
 
-    const cacheKey = `payouts_${account}_${limit}_${page}`;
+    const cacheKey = `payouts_${userId}_${account}_${limit}_${page}`;
     const cached = this.cache.get(cacheKey);
     if (cached) {
       console.log(`Cache hit for payouts: ${account}_${limit}_${page}`);
@@ -210,11 +262,11 @@ export class StripeService {
     try {
       let payouts;
       if (account === 'platform') {
-        payouts = await this.stripe!.payouts.list({
+        payouts = await stripe.payouts.list({
           limit,
         });
       } else {
-        payouts = await this.stripe!.payouts.list(
+        payouts = await stripe.payouts.list(
           {
             limit,
           },
@@ -261,10 +313,10 @@ export class StripeService {
   /**
    * Get summary data efficiently with caching
    */
-  async getSummaryFast(account?: string) {
-    this.ensureStripe();
+  async getSummaryFast(userId: number, account?: string) {
+    const stripe = await this.ensureStripe(userId);
 
-    const cacheKey = `summary_${account || 'all'}`;
+    const cacheKey = `summary_${userId}_${account || 'all'}`;
     const cached = this.cache.get(cacheKey);
     if (cached) {
       console.log(`Cache hit for summary: ${account || 'all'}`);
@@ -279,12 +331,12 @@ export class StripeService {
 
       let payments;
       if (account === 'platform' || !account) {
-        payments = await this.stripe!.paymentIntents.list({
+        payments = await stripe.paymentIntents.list({
           limit: 100,
           created: { gte: thirtyDaysAgo },
         });
       } else {
-        payments = await this.stripe!.paymentIntents.list(
+        payments = await stripe.paymentIntents.list(
           {
             limit: 100,
             created: { gte: thirtyDaysAgo },
@@ -341,10 +393,10 @@ export class StripeService {
   /**
    * Get all accounts efficiently with caching
    */
-  async getAccountsFast() {
-    this.ensureStripe();
+  async getAccountsFast(userId: number) {
+    const stripe = await this.ensureStripe(userId);
 
-    const cacheKey = 'accounts_list';
+    const cacheKey = `accounts_list_${userId}`;
     const cached = this.cache.get(cacheKey);
     if (cached) {
       console.log('Cache hit for accounts');
@@ -352,7 +404,7 @@ export class StripeService {
     }
 
     try {
-      const accounts = await this.stripe!.accounts.list({ limit: 100 });
+      const accounts = await stripe.accounts.list({ limit: 100 });
 
       const result = {
         accounts: accounts.data.map((acc) => ({
@@ -381,18 +433,21 @@ export class StripeService {
    * Get transactions from platform account only - optimized version
    * Uses ONLY: /v1/payment_intents endpoint
    */
-  async getAllTransactionsFast(params: {
-    limit?: number;
-    page?: number;
-    status?: string;
-    statusFilter?: string[]; // Array of raw payment intent statuses
-    days?: number;
-    amount?: number;
-    amountOperator?: string; // 'eq', 'gt', 'lt', 'gte', 'lte'
-    currency?: string;
-    paymentMethod?: string; // 'card', 'bank_account', etc.
-  }) {
-    this.ensureStripe();
+  async getAllTransactionsFast(
+    userId: number,
+    params: {
+      limit?: number;
+      page?: number;
+      status?: string;
+      statusFilter?: string[]; // Array of raw payment intent statuses
+      days?: number;
+      amount?: number;
+      amountOperator?: string; // 'eq', 'gt', 'lt', 'gte', 'lte'
+      currency?: string;
+      paymentMethod?: string; // 'card', 'bank_account', etc.
+    },
+  ) {
+    const stripe = await this.ensureStripe(userId);
 
     const limit = Math.min(params?.limit || 50, 100);
     const page = params?.page || 1;
@@ -437,7 +492,7 @@ export class StripeService {
         }
 
         const platformPaymentsPage =
-          await this.stripe!.paymentIntents.list(paymentParams);
+          await stripe.paymentIntents.list(paymentParams);
         allPlatformPayments = [
           ...allPlatformPayments,
           ...platformPaymentsPage.data,
@@ -468,7 +523,7 @@ export class StripeService {
         }
 
         const platformChargesPage =
-          await this.stripe!.charges.list(chargeParams);
+          await stripe.charges.list(chargeParams);
         allPlatformCharges = [
           ...allPlatformCharges,
           ...platformChargesPage.data,
@@ -1134,12 +1189,15 @@ export class StripeService {
    * Get payouts from platform account only - optimized version
    * Uses ONLY: /v1/payouts endpoint
    */
-  async getAllPayoutsFast(params: {
-    limit?: number;
-    page?: number;
-    status?: string;
-  }) {
-    this.ensureStripe();
+  async getAllPayoutsFast(
+    userId: number,
+    params: {
+      limit?: number;
+      page?: number;
+      status?: string;
+    },
+  ) {
+    const stripe = await this.ensureStripe(userId);
 
     const limit = Math.min(params?.limit || 50, 100);
     const page = params?.page || 1;
@@ -1165,7 +1223,7 @@ export class StripeService {
         `Fetching platform payouts from /v1/payouts (limit: ${limit})...`,
       );
 
-      const platformPayouts = await this.stripe!.payouts.list({
+      const platformPayouts = await stripe.payouts.list({
         limit: 100, // Fetch more to get accurate count, but we'll limit the response
       });
 
@@ -1313,23 +1371,26 @@ export class StripeService {
     }
   }
 
-  async listTransactions(params: {
-    limit?: number;
-    starting_after?: string;
-    ending_before?: string;
-    customer?: string;
-  }) {
-    this.ensureStripe();
+  async listTransactions(
+    userId: number,
+    params: {
+      limit?: number;
+      starting_after?: string;
+      ending_before?: string;
+      customer?: string;
+    },
+  ) {
+    const stripe = await this.ensureStripe(userId);
 
     // Use caching for better performance
-    const cacheKey = `list_transactions_${params?.limit || 200}_${params?.starting_after || 'none'}_${params?.ending_before || 'none'}`;
+    const cacheKey = `list_transactions_${userId}_${params?.limit || 200}_${params?.starting_after || 'none'}_${params?.ending_before || 'none'}`;
     const cached = this.cache.get(cacheKey);
     if (cached) {
       return cached;
     }
 
     // Reduced expansions for better performance
-    const payments = await this.stripe!.paymentIntents.list({
+    const payments = await stripe.paymentIntents.list({
       limit: Math.min(params?.limit ?? 100, 100), // Cap at 100 for performance
       starting_after: params?.starting_after,
       ending_before: params?.ending_before,
@@ -1371,8 +1432,8 @@ export class StripeService {
     return result;
   }
 
-  async getTransaction(id: string) {
-    this.ensureStripe();
+  async getTransaction(userId: number, id: string) {
+    const stripe = await this.ensureStripe(userId);
 
     let payment: any;
     let charge: any;
@@ -1383,7 +1444,7 @@ export class StripeService {
       if (id.startsWith('ch_')) {
         // Retrieve Charge first from platform account
         try {
-          charge = await this.stripe!.charges.retrieve(id, {
+          charge = await stripe.charges.retrieve(id, {
             expand: [
               'payment_intent',
               'payment_intent.payment_method',
@@ -1413,7 +1474,7 @@ export class StripeService {
           ) {
             // Try to find the charge on Connect accounts (limit to 20 accounts for performance)
             try {
-              const accounts = await this.stripe!.accounts.list({ limit: 20 });
+              const accounts = await stripe.accounts.list({ limit: 20 });
               let foundCharge = false;
 
               // Try each Connect account with Promise.all for parallel requests (but limit concurrency)
@@ -1421,7 +1482,7 @@ export class StripeService {
                 .slice(0, 10)
                 .map(async (account) => {
                   try {
-                    const connectCharge = await this.stripe!.charges.retrieve(
+                    const connectCharge = await stripe.charges.retrieve(
                       id,
                       {
                         expand: [
@@ -1462,12 +1523,10 @@ export class StripeService {
               if (!foundCharge) {
                 // Try to find the charge by searching recent PaymentIntents on platform
                 try {
-                  const recentPayments = await this.stripe!.paymentIntents.list(
-                    {
-                      limit: 100,
-                      expand: ['data.latest_charge'],
-                    },
-                  );
+                  const recentPayments = await stripe.paymentIntents.list({
+                    limit: 100,
+                    expand: ['data.latest_charge'],
+                  });
 
                   // Look for a PaymentIntent whose latest_charge matches our charge ID
                   const foundPayment = recentPayments.data.find((pi: any) => {
@@ -1484,7 +1543,7 @@ export class StripeService {
 
                   if (foundPayment) {
                     // Retrieve the full PaymentIntent with all expansions
-                    payment = await this.stripe!.paymentIntents.retrieve(
+                    payment = await stripe.paymentIntents.retrieve(
                       foundPayment.id,
                       {
                         expand: [
@@ -1545,7 +1604,7 @@ export class StripeService {
             payment = charge.payment_intent;
           } else {
             try {
-              payment = await this.stripe!.paymentIntents.retrieve(
+              payment = await stripe.paymentIntents.retrieve(
                 paymentIntentId,
                 {
                   expand: [
@@ -1581,7 +1640,7 @@ export class StripeService {
               ) {
                 // Try Connect accounts (limit to 10 for performance)
                 try {
-                  const accounts = await this.stripe!.accounts.list({
+                  const accounts = await stripe.accounts.list({
                     limit: 20,
                   });
 
@@ -1590,7 +1649,7 @@ export class StripeService {
                     .map(async (account) => {
                       try {
                         const connectPayment =
-                          await this.stripe!.paymentIntents.retrieve(
+                          await stripe.paymentIntents.retrieve(
                             paymentIntentId,
                             {
                               expand: [
@@ -1672,7 +1731,7 @@ export class StripeService {
         // If that fails, we need to search through recent PaymentIntents to find the related one
         try {
           // First attempt: Try direct retrieval (might work in some cases)
-          payment = await this.stripe!.paymentIntents.retrieve(id, {
+          payment = await stripe.paymentIntents.retrieve(id, {
             expand: [
               'payment_method',
               'payment_method.us_bank_account',
@@ -1694,7 +1753,7 @@ export class StripeService {
           // Second attempt: Search through recent PaymentIntents
           // This is a workaround - we'll look through recent payments to find a match
           try {
-            const recentPayments = await this.stripe!.paymentIntents.list({
+            const recentPayments = await stripe.paymentIntents.list({
               limit: 100,
               expand: ['data.payment_method', 'data.latest_charge'],
             });
@@ -1746,27 +1805,24 @@ export class StripeService {
             }
 
             if (foundPayment) {
-              payment = await this.stripe!.paymentIntents.retrieve(
-                foundPayment.id,
-                {
-                  expand: [
-                    'payment_method',
-                    'payment_method.us_bank_account',
-                    'latest_charge',
-                    'latest_charge.outcome',
-                    'latest_charge.refunds',
-                    'latest_charge.balance_transaction',
-                    'latest_charge.transfer_data',
-                    'latest_charge.payment_method_details',
-                    'customer',
-                    'application',
-                    'on_behalf_of',
-                    'review',
-                    'source',
-                    'transfer_data.destination',
-                  ],
-                },
-              );
+              payment = await stripe.paymentIntents.retrieve(foundPayment.id, {
+                expand: [
+                  'payment_method',
+                  'payment_method.us_bank_account',
+                  'latest_charge',
+                  'latest_charge.outcome',
+                  'latest_charge.refunds',
+                  'latest_charge.balance_transaction',
+                  'latest_charge.transfer_data',
+                  'latest_charge.payment_method_details',
+                  'customer',
+                  'application',
+                  'on_behalf_of',
+                  'review',
+                  'source',
+                  'transfer_data.destination',
+                ],
+              });
             } else {
               throw new Error(
                 `Payment ${id} not found. Payment objects (py_) cannot be directly retrieved. Please use the PaymentIntent ID (pi_...) from the transaction list.`,
@@ -1781,7 +1837,7 @@ export class StripeService {
       } else {
         // Retrieve PaymentIntent directly with full expansion
         try {
-          payment = await this.stripe!.paymentIntents.retrieve(id, {
+          payment = await stripe.paymentIntents.retrieve(id, {
             expand: [
               'payment_method',
               'payment_method.us_bank_account',
@@ -1806,7 +1862,7 @@ export class StripeService {
             piError.code === 'resource_missing'
           ) {
             try {
-              const accounts = await this.stripe!.accounts.list({ limit: 20 });
+              const accounts = await stripe.accounts.list({ limit: 20 });
 
               // Try parallel requests but limit to first 10 accounts
               const accountPromises = accounts.data
@@ -1814,7 +1870,7 @@ export class StripeService {
                 .map(async (account) => {
                   try {
                     const connectPayment =
-                      await this.stripe!.paymentIntents.retrieve(
+                      await stripe.paymentIntents.retrieve(
                         id,
                         {
                           expand: [
@@ -2214,13 +2270,16 @@ export class StripeService {
     };
   }
 
-  async listTransactionsWithSummary(params: {
-    limit?: number;
-    starting_after?: string;
-    ending_before?: string;
-    customer?: string;
-  }) {
-    const result = await this.listTransactions(params);
+  async listTransactionsWithSummary(
+    userId: number,
+    params: {
+      limit?: number;
+      starting_after?: string;
+      ending_before?: string;
+      customer?: string;
+    },
+  ) {
+    const result = await this.listTransactions(userId, params);
     const summary = (result.data as any[]).reduce(
       (acc, payment) => {
         acc.total++;
@@ -2255,8 +2314,8 @@ export class StripeService {
     return { transactions: result, summary };
   }
 
-  async getAllTransactionsWithSummary() {
-    this.ensureStripe();
+  async getAllTransactionsWithSummary(userId: number) {
+    const stripe = await this.ensureStripe(userId);
     let allTransactions: any[] = [];
     let allSummary = {
       total: 0,
@@ -2271,7 +2330,7 @@ export class StripeService {
     console.log('Fetching transactions from platform account...');
 
     // First, get Payment Intents from the platform account with enhanced expansions
-    const platformPayments = await this.stripe!.paymentIntents.list({
+    const platformPayments = await stripe.paymentIntents.list({
       limit: 100, // Stripe's maximum limit
       expand: [
         'data.payment_method',
@@ -2286,7 +2345,7 @@ export class StripeService {
 
     // Also get Charges from the platform account (these are what show in Stripe dashboard)
     console.log('Fetching charges from platform account...');
-    const platformCharges = await this.stripe!.charges.list({
+    const platformCharges = await stripe.charges.list({
       limit: 100, // Stripe's maximum limit
       expand: ['data.customer', 'data.refunds', 'data.balance_transaction'], // Expand customer, refunds, and balance_transaction
     });
@@ -2302,7 +2361,7 @@ export class StripeService {
 
     while (hasMore && allPlatformPayments.length < 1000) {
       try {
-        const nextPage = await this.stripe!.paymentIntents.list({
+        const nextPage = await stripe.paymentIntents.list({
           limit: 100,
           starting_after: startingAfter,
           expand: [
@@ -2340,7 +2399,7 @@ export class StripeService {
 
     while (chargesHasMore && allPlatformCharges.length < 1000) {
       try {
-        const nextChargesPage = await this.stripe!.charges.list({
+        const nextChargesPage = await stripe.charges.list({
           limit: 100,
           starting_after: chargesStartingAfter,
           expand: ['data.customer', 'data.refunds', 'data.balance_transaction'], // Expand customer, refunds, and balance_transaction
@@ -2736,12 +2795,15 @@ export class StripeService {
     };
   }
 
-  async listPayouts(params: {
-    limit?: number;
-    starting_after?: string;
-    ending_before?: string;
-  }) {
-    this.ensureStripe();
+  async listPayouts(
+    userId: number,
+    params: {
+      limit?: number;
+      starting_after?: string;
+      ending_before?: string;
+    },
+  ) {
+    const stripe = await this.ensureStripe(userId);
 
     // Use caching for better performance
     const cacheKey = `list_payouts_${params?.limit || 200}_${params?.starting_after || 'none'}_${params?.ending_before || 'none'}`;
@@ -2750,7 +2812,7 @@ export class StripeService {
       return cached;
     }
 
-    const payouts = await this.stripe!.payouts.list({
+    const payouts = await stripe.payouts.list({
       limit: Math.min(params?.limit ?? 100, 100), // Cap at 100 for performance
       starting_after: params?.starting_after,
       ending_before: params?.ending_before,
@@ -2787,9 +2849,9 @@ export class StripeService {
     return result;
   }
 
-  async getPayout(id: string) {
-    this.ensureStripe();
-    const payout = await this.stripe!.payouts.retrieve(id);
+  async getPayout(userId: number, id: string) {
+    const stripe = await this.ensureStripe(userId);
+    const payout = await stripe.payouts.retrieve(id);
     return {
       id: payout.id,
       amount: payout.amount,
@@ -2809,8 +2871,8 @@ export class StripeService {
     };
   }
 
-  async getAllPayoutsWithSummary() {
-    this.ensureStripe();
+  async getAllPayoutsWithSummary(userId: number) {
+    const stripe = await this.ensureStripe(userId);
     let allPayouts: any[] = [];
     let allSummary = {
       total: 0,
@@ -2824,7 +2886,7 @@ export class StripeService {
     console.log('Fetching payouts from platform account...');
 
     // Get Payouts from the platform account
-    const platformPayouts = await this.stripe!.payouts.list({
+    const platformPayouts = await stripe.payouts.list({
       limit: 100, // Stripe's maximum limit
     });
 
@@ -2838,7 +2900,7 @@ export class StripeService {
 
     while (hasMore && allPlatformPayouts.length < 1000) {
       try {
-        const nextPage = await this.stripe!.payouts.list({
+        const nextPage = await stripe.payouts.list({
           limit: 100,
           starting_after: startingAfter,
         });
@@ -2933,9 +2995,9 @@ export class StripeService {
     };
   }
 
-  async getConnectedAccounts() {
-    this.ensureStripe();
-    const accounts = await this.stripe!.accounts.list({ limit: 100 });
+  async getConnectedAccounts(userId: number) {
+    const stripe = await this.ensureStripe(userId);
+    const accounts = await stripe.accounts.list({ limit: 100 });
     console.log(`Found ${accounts.data.length} connected accounts`);
 
     return {
@@ -2956,8 +3018,11 @@ export class StripeService {
    * Get all customers from platform account - optimized version
    * Uses ONLY: /v1/customers endpoint
    */
-  async getAllCustomersFast(params: { limit?: number; page?: number }) {
-    this.ensureStripe();
+  async getAllCustomersFast(
+    userId: number,
+    params: { limit?: number; page?: number },
+  ) {
+    const stripe = await this.ensureStripe(userId);
 
     const limit = Math.min(params?.limit || 50, 100);
     const page = params?.page || 1;
@@ -2969,7 +3034,7 @@ export class StripeService {
         `Fetching platform customers from /v1/customers (limit: ${limit})...`,
       );
 
-      const platformCustomers = await this.stripe!.customers.list({
+      const platformCustomers = await stripe.customers.list({
         limit: 100, // Fetch more to get accurate count, but we'll limit the response
       });
 
@@ -3107,12 +3172,15 @@ export class StripeService {
   /**
    * Get volume data for dashboard graphs (gross and net volume over time)
    */
-  async getVolumeData(params?: {
-    days?: number; // Number of days to look back (default: 1 for today)
-    groupBy?: 'hour' | 'day'; // Group by hour or day (default: 'hour' for today, 'day' for longer periods)
-    date?: Date; // Specific date to filter by (for a single day)
-  }) {
-    this.ensureStripe();
+  async getVolumeData(
+    userId: number,
+    params?: {
+      days?: number; // Number of days to look back (default: 1 for today)
+      groupBy?: 'hour' | 'day'; // Group by hour or day (default: 'hour' for today, 'day' for longer periods)
+      date?: Date; // Specific date to filter by (for a single day)
+    },
+  ) {
+    const stripe = await this.ensureStripe(userId);
 
     // Determine start and end times
     let startTime: number;
@@ -3152,14 +3220,14 @@ export class StripeService {
 
     try {
       // Fetch payment intents with latest_charge expanded to get net amounts
-      const payments = await this.stripe!.paymentIntents.list({
+      const payments = await stripe.paymentIntents.list({
         limit: 100,
         created: { gte: startTime, lte: endTime },
         expand: ['data.latest_charge.balance_transaction'],
       });
 
       // Fetch customers created in the same time period
-      const customers = await this.stripe!.customers.list({
+      const customers = await stripe.customers.list({
         limit: 100,
         created: { gte: startTime, lte: endTime },
       });
