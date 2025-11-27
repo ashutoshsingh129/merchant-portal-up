@@ -1,25 +1,29 @@
 import {
-    Controller,
-    Get,
-    Param,
-    Query,
-    Post,
-    Body,
-    Delete,
-    HttpException,
-    HttpStatus,
-    UseGuards,
-    Request,
+  Controller,
+  Get,
+  Param,
+  Query,
+  Post,
+  Body,
+  Delete,
+  HttpException,
+  HttpStatus,
+  UseGuards,
+  Request,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { StripeService } from './stripe.service';
 import { StripeKeysService } from './stripe-keys.service';
+import { StripeDbService } from './stripe-db.service';
+import { StripeSyncService } from './stripe-sync.service';
 
 @Controller('stripe')
 export class StripeController {
   constructor(
     private readonly stripeService: StripeService,
     private readonly stripeKeysService: StripeKeysService,
+    private readonly stripeDbService: StripeDbService,
+    private readonly stripeSyncService: StripeSyncService,
   ) {}
 
   // Helper to get userId from request
@@ -122,7 +126,7 @@ export class StripeController {
   }
 
   // NEW OPTIMIZED ENDPOINTS FOR FAST LOADING
-  
+
   @Get('transactions-fast')
   @UseGuards(AuthGuard('jwt'))
   getTransactionsFast(
@@ -156,7 +160,10 @@ export class StripeController {
     const userId = this.getUserId(req);
     // Parse statusFilter if provided (comma-separated string)
     const statusFilterArray = statusFilter
-      ? statusFilter.split(',').map((s) => s.trim()).filter((s) => s.length > 0)
+      ? statusFilter
+          .split(',')
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0)
       : undefined;
 
     return this.stripeService.getAllTransactionsFast(userId, {
@@ -254,13 +261,224 @@ export class StripeController {
     });
   }
 
+  // NEW DATABASE-PAGINATED ENDPOINTS
+  @Get('transactions-db')
+  @UseGuards(AuthGuard('jwt'))
+  async getTransactionsFromDb(
+    @Request() req: any,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    try {
+      const userId = this.getUserId(req);
+      const pageNum = page ? parseInt(page) : 1;
+      const limitNum = limit ? parseInt(limit) : 10;
+      return await this.stripeDbService.getCombinedTransactions(
+        userId,
+        pageNum,
+        limitNum,
+      );
+    } catch (error: any) {
+      throw new HttpException(
+        error.message || 'Failed to fetch transactions',
+        error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Get('transactions-db/:id')
+  @UseGuards(AuthGuard('jwt'))
+  async getTransactionFromDb(@Request() req: any, @Param('id') id: string) {
+    try {
+      const userId = this.getUserId(req);
+      const transaction = await this.stripeDbService.getTransactionById(
+        userId,
+        id,
+      );
+      if (!transaction) {
+        throw new HttpException('Transaction not found', HttpStatus.NOT_FOUND);
+      }
+      return transaction;
+    } catch (error: any) {
+      throw new HttpException(
+        error.message || 'Failed to fetch transaction',
+        error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Post('sync-initial')
+  @UseGuards(AuthGuard('jwt'))
+  async triggerInitialSync(@Request() req: any) {
+    try {
+      const userId = this.getUserId(req);
+      const result = await this.stripeSyncService.syncInitialRecords(userId);
+      return {
+        message: 'Initial sync completed successfully',
+        paymentIntents: result.paymentIntents,
+        charges: result.charges,
+      };
+    } catch (error: any) {
+      throw new HttpException(
+        error.message || 'Failed to sync data',
+        error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Post('sync-batch')
+  @UseGuards(AuthGuard('jwt'))
+  async triggerBatchSync(
+    @Request() req: any,
+    @Body() body?: { batchSize?: number },
+  ) {
+    try {
+      const userId = this.getUserId(req);
+      const batchSize = body?.batchSize || 100;
+      const result = await this.stripeSyncService.syncNextBatch(
+        userId,
+        batchSize,
+      );
+      return {
+        message: 'Batch sync completed successfully',
+        paymentIntents: result.paymentIntents,
+        charges: result.charges,
+        hasMore:
+          result.paymentIntents.hasMore || result.charges.hasMore,
+      };
+    } catch (error: any) {
+      throw new HttpException(
+        error.message || 'Failed to sync batch',
+        error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Post('sync-all')
+  @UseGuards(AuthGuard('jwt'))
+  async triggerFullSync(@Request() req: any) {
+    try {
+      const userId = this.getUserId(req);
+      console.log(`🔄 Manual full sync triggered for user ${userId}`);
+
+      // Get current status before sync
+      const statusBefore = await this.stripeDbService.getSyncStatus(userId);
+      console.log(
+        `📊 Status before sync: ${statusBefore.paymentIntentsCount} PIs, ${statusBefore.chargesCount} Charges`,
+      );
+
+      const result = await this.stripeSyncService.syncAllRecordsForUser(userId);
+
+      // Get status after sync
+      const statusAfter = await this.stripeDbService.getSyncStatus(userId);
+      console.log(
+        `📊 Status after sync: ${statusAfter.paymentIntentsCount} PIs, ${statusAfter.chargesCount} Charges`,
+      );
+
+      return {
+        message: 'Full sync completed successfully',
+        statusBefore: {
+          paymentIntents: statusBefore.paymentIntentsCount,
+          charges: statusBefore.chargesCount,
+        },
+        statusAfter: {
+          paymentIntents: statusAfter.paymentIntentsCount,
+          charges: statusAfter.chargesCount,
+        },
+        paymentIntents: {
+          synced: result.paymentIntents.synced,
+          skipped: result.paymentIntents.skipped,
+        },
+        charges: {
+          synced: result.charges.synced,
+          skipped: result.charges.skipped,
+        },
+      };
+    } catch (error: any) {
+      console.error('❌ Full sync error:', error);
+      throw new HttpException(
+        error.message || 'Failed to sync all data',
+        error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Get('sync-status')
+  @UseGuards(AuthGuard('jwt'))
+  async getSyncStatus(@Request() req: any) {
+    try {
+      const userId = this.getUserId(req);
+      return await this.stripeDbService.getSyncStatus(userId);
+    } catch (error: any) {
+      throw new HttpException(
+        error.message || 'Failed to get sync status',
+        error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
   // Stripe Keys Management Endpoints
   @Post('keys')
   @UseGuards(AuthGuard('jwt'))
-  async storeKeys(@Request() req: any, @Body() body: { secret_key: string; publishable_key: string }) {
+  async storeKeys(
+    @Request() req: any,
+    @Body() body: { secret_key: string; publishable_key: string },
+  ) {
     try {
       const userId = req.user.id;
-      return await this.stripeKeysService.storeKeys(userId, body.secret_key, body.publishable_key);
+      const result = await this.stripeKeysService.storeKeys(
+        userId,
+        body.secret_key,
+        body.publishable_key,
+      );
+
+      // Trigger FULL sync after keys are stored (fetches ALL records automatically)
+      // Run this in the background so it doesn't block the response
+      // But start it immediately
+      (async () => {
+        try {
+          // Wait a moment for keys to be fully saved
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+
+          console.log(
+            `═══════════════════════════════════════════════════════════`,
+          );
+          console.log(
+            `🔄 Starting AUTOMATIC FULL SYNC for user ${userId} after keys stored...`,
+          );
+          console.log(
+            `   This will fetch ALL payment intents and charges from Stripe...`,
+          );
+          console.log(
+            `═══════════════════════════════════════════════════════════`,
+          );
+
+          await this.stripeSyncService.syncForUser(userId, true);
+
+          console.log(
+            `═══════════════════════════════════════════════════════════`,
+          );
+          console.log(`✅ Automatic FULL sync completed for user ${userId}`);
+          console.log(
+            `═══════════════════════════════════════════════════════════`,
+          );
+        } catch (syncError: any) {
+          console.error(
+            `═══════════════════════════════════════════════════════════`,
+          );
+          console.error(
+            `❌ ERROR during automatic sync after storing keys for user ${userId}`,
+          );
+          console.error(`   Message: ${syncError.message}`);
+          console.error(`   Stack: ${syncError.stack}`);
+          console.error(
+            `═══════════════════════════════════════════════════════════`,
+          );
+          // Don't fail the request if sync fails, just log it
+        }
+      })();
+
+      return result;
     } catch (error: any) {
       throw new HttpException(
         {
@@ -327,5 +545,3 @@ export class StripeController {
     }
   }
 }
-
-

@@ -1087,6 +1087,249 @@ export class StripeService {
         }
     }
 
+    // Get sync status
+    async getSyncStatus(): Promise<
+        ApiResponse<{
+            paymentIntentsCount: number;
+            chargesCount: number;
+            totalTransactions: number;
+            oldestRecord: string | null;
+            newestRecord: string | null;
+        }>
+    > {
+        try {
+            const res = await fetch(`${this.baseUrl}/stripe/sync-status`, {
+                headers: this.getAuthHeaders(),
+            });
+            if (!res.ok) throw new Error('Failed to fetch sync status');
+            const body = await res.json();
+
+            return {
+                data: body,
+                message: 'Sync status fetched successfully',
+                success: true,
+            };
+        } catch (error) {
+            console.error('Error fetching sync status:', error);
+            return {
+                data: {
+                    paymentIntentsCount: 0,
+                    chargesCount: 0,
+                    totalTransactions: 0,
+                    oldestRecord: null,
+                    newestRecord: null,
+                },
+                message:
+                    error instanceof Error
+                        ? error.message
+                        : 'Failed to fetch sync status',
+                success: false,
+            };
+        }
+    }
+
+    // Get transactions from database with pagination
+    async getTransactionsFromDb(params?: {
+        page?: number;
+        limit?: number;
+    }): Promise<
+        ApiResponse<{
+            transactions: StripeTransaction[];
+            total: number;
+            page: number;
+            limit: number;
+            totalPages: number;
+            hasMore: boolean;
+        }>
+    > {
+        try {
+            const query = new URLSearchParams();
+            if (params?.page) query.append('page', String(params.page));
+            if (params?.limit) query.append('limit', String(params.limit));
+
+            const res = await fetch(
+                `${this.baseUrl}/stripe/transactions-db?${query.toString()}`,
+                {
+                    headers: this.getAuthHeaders(),
+                }
+            );
+            if (!res.ok)
+                throw new Error('Failed to fetch transactions from database');
+            const body = await res.json();
+
+            // Transform the database response to match StripeTransaction format
+            const transactions: StripeTransaction[] = body.transactions.map(
+                (t: any) => ({
+                    id: t.id,
+                    amount: t.amount,
+                    currency: t.currency,
+                    status: t.status,
+                    description: t.description,
+                    customer: t.customer,
+                    created: t.created,
+                    metadata: t.metadata,
+                    payment_method: t.payment_method_details,
+                    amount_refunded: t.amount_refunded,
+                    refunded: t.refunded,
+                    payment_intent: t.payment_intent,
+                    object: t.object,
+                    ...t.stripeData, // Include full stripe data for compatibility
+                })
+            );
+
+            return {
+                data: {
+                    transactions,
+                    total: body.total,
+                    page: body.page,
+                    limit: body.limit,
+                    totalPages: body.totalPages,
+                    hasMore: body.hasMore,
+                },
+                message: 'Transactions fetched successfully from database',
+                success: true,
+            };
+        } catch (error) {
+            console.error('Error fetching transactions from database:', error);
+            return {
+                data: {
+                    transactions: [],
+                    total: 0,
+                    page: params?.page || 1,
+                    limit: params?.limit || 10,
+                    totalPages: 0,
+                    hasMore: false,
+                },
+                message:
+                    error instanceof Error
+                        ? error.message
+                        : 'Failed to fetch transactions from database',
+                success: false,
+            };
+        }
+    }
+
+    // Trigger initial sync (first 10 payment intents and 10 charges)
+    async triggerInitialSync(): Promise<
+        ApiResponse<{
+            message: string;
+            paymentIntents: { synced: number; skipped: number };
+            charges: { synced: number; skipped: number };
+        }>
+    > {
+        try {
+            const res = await fetch(`${this.baseUrl}/stripe/sync-initial`, {
+                method: 'POST',
+                headers: this.getAuthHeaders(),
+            });
+            if (!res.ok) throw new Error('Failed to trigger initial sync');
+            const body = await res.json();
+
+            return {
+                data: body,
+                message: 'Initial sync triggered successfully',
+                success: true,
+            };
+        } catch (error) {
+            console.error('Error triggering initial sync:', error);
+            return {
+                data: {
+                    message: 'Failed to trigger initial sync',
+                    paymentIntents: { synced: 0, skipped: 0 },
+                    charges: { synced: 0, skipped: 0 },
+                },
+                message:
+                    error instanceof Error
+                        ? error.message
+                        : 'Failed to trigger initial sync',
+                success: false,
+            };
+        }
+    }
+
+    // Trigger batch sync (100 records per request)
+    async triggerBatchSync(params?: { batchSize?: number }): Promise<
+        ApiResponse<{
+            message: string;
+            paymentIntents: {
+                synced: number;
+                skipped: number;
+                hasMore: boolean;
+            };
+            charges: { synced: number; skipped: number; hasMore: boolean };
+            hasMore: boolean;
+        }>
+    > {
+        try {
+            const res = await fetch(`${this.baseUrl}/stripe/sync-batch`, {
+                method: 'POST',
+                headers: this.getAuthHeaders(),
+                body: JSON.stringify({ batchSize: params?.batchSize || 100 }),
+            });
+            if (!res.ok) throw new Error('Failed to trigger batch sync');
+            const body = await res.json();
+
+            return {
+                data: body,
+                message: 'Batch sync triggered successfully',
+                success: true,
+            };
+        } catch (error) {
+            console.error('Error triggering batch sync:', error);
+            return {
+                data: {
+                    message: 'Failed to trigger batch sync',
+                    paymentIntents: { synced: 0, skipped: 0, hasMore: false },
+                    charges: { synced: 0, skipped: 0, hasMore: false },
+                    hasMore: false,
+                },
+                message:
+                    error instanceof Error
+                        ? error.message
+                        : 'Failed to trigger batch sync',
+                success: false,
+            };
+        }
+    }
+
+    // Trigger full sync (all records)
+    async triggerFullSync(): Promise<
+        ApiResponse<{
+            message: string;
+            paymentIntents: { synced: number; skipped: number };
+            charges: { synced: number; skipped: number };
+        }>
+    > {
+        try {
+            const res = await fetch(`${this.baseUrl}/stripe/sync-all`, {
+                method: 'POST',
+                headers: this.getAuthHeaders(),
+            });
+            if (!res.ok) throw new Error('Failed to trigger full sync');
+            const body = await res.json();
+
+            return {
+                data: body,
+                message: 'Full sync triggered successfully',
+                success: true,
+            };
+        } catch (error) {
+            console.error('Error triggering full sync:', error);
+            return {
+                data: {
+                    message: 'Failed to trigger full sync',
+                    paymentIntents: { synced: 0, skipped: 0 },
+                    charges: { synced: 0, skipped: 0 },
+                },
+                message:
+                    error instanceof Error
+                        ? error.message
+                        : 'Failed to trigger full sync',
+                success: false,
+            };
+        }
+    }
+
     // Get volume data for dashboard graphs
     async getVolumeData(params?: {
         days?: number;

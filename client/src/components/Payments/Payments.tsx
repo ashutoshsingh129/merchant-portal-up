@@ -373,12 +373,15 @@ const Payments: React.FC = () => {
                 paymentMethod: paymentMethodFilter || undefined,
             };
 
-            const response =
-                await stripeService.getAllTransactionsFast(requestParams);
+            // Use database endpoint for paginated data
+            const response = await stripeService.getTransactionsFromDb({
+                page: currentPage,
+                limit: 10,
+            });
 
             if (response.success) {
                 // Apply client-side filters for customer ID, email, and dispute amount
-                let filteredTransactions = response.data.transactions.data;
+                let filteredTransactions = response.data.transactions;
 
                 // Apply customer ID filter
                 if (customerIdFilter) {
@@ -616,10 +619,28 @@ const Payments: React.FC = () => {
                 // Always replace data to avoid duplicates
                 // Backend handles pagination, so we just show what it returns
                 setTransactions(filteredTransactions);
-                setHasMore(response.data.transactions.has_more);
-                setSummary(response.data.summary);
+                setHasMore(response.data.hasMore);
+                // Calculate summary from transactions (basic implementation)
+                const summaryData = {
+                    total: response.data.total,
+                    succeeded: filteredTransactions.filter(
+                        (t: StripeTransaction) => t.status === 'succeeded'
+                    ).length,
+                    refunded: filteredTransactions.filter(
+                        (t: StripeTransaction) =>
+                            t.status === 'refunded' || t.refunded
+                    ).length,
+                    disputed: 0, // Will be calculated if needed
+                    failed: filteredTransactions.filter(
+                        (t: StripeTransaction) => t.status === 'failed'
+                    ).length,
+                    uncaptured: filteredTransactions.filter(
+                        (t: StripeTransaction) => t.status === 'pending'
+                    ).length,
+                };
+                setSummary(summaryData);
                 console.log(
-                    `Payments: Received ${response.data.transactions.data.length} transactions, filtered to ${filteredTransactions.length}, total: ${response.data.transactions.total_count}, has_more: ${response.data.transactions.has_more}`
+                    `Payments: Received ${response.data.transactions.length} transactions from database, filtered to ${filteredTransactions.length}, total: ${response.data.total}, has_more: ${response.data.hasMore}, page: ${response.data.page}`
                 );
             } else {
                 setError(response.message);
@@ -654,6 +675,122 @@ const Payments: React.FC = () => {
         evidenceSubmittedAtFilter,
         transferredToFilter,
     ]);
+
+    // State for sync management
+    const [isSyncing, setIsSyncing] = useState(false);
+    const [syncStatus, setSyncStatus] = useState<string>('');
+    const batchSyncIntervalRef = useRef<NodeJS.Timeout | null>(null);
+    const hasCheckedInitialSync = useRef(false);
+
+    // Start background batch sync (100 records per request)
+    const startBackgroundBatchSync = useCallback(() => {
+        // Clear any existing interval
+        if (batchSyncIntervalRef.current) {
+            clearInterval(batchSyncIntervalRef.current);
+        }
+
+        // Start batch sync immediately, then continue every 5 seconds
+        const syncBatch = async () => {
+            try {
+                const response = await stripeService.triggerBatchSync({
+                    batchSize: 100,
+                });
+
+                if (response.success) {
+                    const totalSynced =
+                        response.data.paymentIntents.synced +
+                        response.data.charges.synced;
+
+                    if (totalSynced > 0) {
+                        setSyncStatus(
+                            `Syncing in background: ${totalSynced} records...`
+                        );
+                    }
+
+                    // If no more records to sync, stop the interval
+                    if (!response.data.hasMore) {
+                        if (batchSyncIntervalRef.current) {
+                            clearInterval(batchSyncIntervalRef.current);
+                            batchSyncIntervalRef.current = null;
+                        }
+                        setSyncStatus('All records synced');
+                        setIsSyncing(false);
+                    }
+                }
+            } catch (error) {
+                console.error('Error in background batch sync:', error);
+            }
+        };
+
+        // Run immediately
+        syncBatch();
+
+        // Then run every 5 seconds
+        batchSyncIntervalRef.current = setInterval(syncBatch, 5000);
+    }, []);
+
+    // Check if initial sync is needed and trigger it (only once on mount)
+    useEffect(() => {
+        const checkAndTriggerInitialSync = async () => {
+            if (hasCheckedInitialSync.current) return;
+            hasCheckedInitialSync.current = true;
+
+            try {
+                // Check if we have any records in DB
+                const response = await stripeService.getTransactionsFromDb({
+                    page: 1,
+                    limit: 1,
+                });
+
+                // If no records, trigger initial sync
+                if (response.success && response.data.total === 0) {
+                    setIsSyncing(true);
+                    setSyncStatus(
+                        'Starting initial sync (first 10 records)...'
+                    );
+
+                    const syncResponse =
+                        await stripeService.triggerInitialSync();
+
+                    if (syncResponse.success) {
+                        setSyncStatus(
+                            `Initial sync completed: ${syncResponse.data.paymentIntents.synced} payment intents, ${syncResponse.data.charges.synced} charges`
+                        );
+
+                        // Fetch the initial data
+                        fetchData();
+
+                        // Start background batch sync
+                        startBackgroundBatchSync();
+                    } else {
+                        setSyncStatus('Initial sync failed');
+                        setIsSyncing(false);
+                    }
+                } else if (response.success && response.data.total > 0) {
+                    // We have records, start background batch sync to continue syncing
+                    setIsSyncing(true);
+                    setSyncStatus('Continuing background sync...');
+                    startBackgroundBatchSync();
+                }
+            } catch (error) {
+                console.error('Error checking sync status:', error);
+                setSyncStatus('Error checking sync status');
+                setIsSyncing(false);
+            }
+        };
+
+        checkAndTriggerInitialSync();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // Only run once on mount
+
+    // Cleanup interval on unmount
+    useEffect(() => {
+        return () => {
+            if (batchSyncIntervalRef.current) {
+                clearInterval(batchSyncIntervalRef.current);
+            }
+        };
+    }, []);
 
     useEffect(() => {
         fetchData();
@@ -1296,6 +1433,19 @@ const Payments: React.FC = () => {
             {error && (
                 <Alert severity="error" sx={{ mb: 2 }}>
                     {error}
+                </Alert>
+            )}
+
+            {/* Sync Status Indicator */}
+            {syncStatus && (
+                <Alert
+                    severity={isSyncing ? 'info' : 'success'}
+                    sx={{ mb: 2 }}
+                    icon={
+                        isSyncing ? <CircularProgress size={16} /> : undefined
+                    }
+                >
+                    {syncStatus}
                 </Alert>
             )}
 
@@ -3616,6 +3766,38 @@ const Payments: React.FC = () => {
                         <Typography variant="body1" color="text.secondary">
                             No transactions found
                         </Typography>
+                    </Box>
+                )}
+
+                {/* Pagination Controls */}
+                {transactions.length > 0 && (
+                    <Box
+                        display="flex"
+                        justifyContent="space-between"
+                        alignItems="center"
+                        mt={3}
+                        mb={2}
+                        px={2}
+                    >
+                        <Button
+                            variant="outlined"
+                            disabled={currentPage === 1 || loading}
+                            onClick={() =>
+                                setCurrentPage(prev => Math.max(1, prev - 1))
+                            }
+                        >
+                            Previous
+                        </Button>
+                        <Typography variant="body2" color="text.secondary">
+                            Page {currentPage}
+                        </Typography>
+                        <Button
+                            variant="outlined"
+                            disabled={!hasMore || loading}
+                            onClick={() => setCurrentPage(prev => prev + 1)}
+                        >
+                            Next
+                        </Button>
                     </Box>
                 )}
             </Box>
