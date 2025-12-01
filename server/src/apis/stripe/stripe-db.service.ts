@@ -135,13 +135,35 @@ export class StripeDbService {
     }
 
     // Add payment intents (avoid duplicates if charge exists)
+    // 
+    // DEDUPLICATION LOGIC:
+    // A duplicate exists when: charges.payment_intent_id = payment_intents.stripe_id
+    // 
+    // Stripe API Structure:
+    // - Charge object: { "id": "ch_xxx", "payment_intent": "pi_xxx" }
+    // - Payment Intent object: { "id": "pi_xxx", "latest_charge": "ch_xxx" }
+    // 
+    // Relationship:
+    // - Charge.payment_intent → Payment Intent.id (stripe_id)
+    // - Payment Intent.latest_charge → Charge.id (stripe_id)
+    // 
+    // We prioritize Charges over Payment Intents (charges represent completed transactions)
+    // If a charge exists for a payment intent, we skip the payment intent (show only the charge)
+    
+    // Build set of payment intent IDs from charges
+    // This identifies which payment intents have corresponding charges (duplicates)
     const chargePaymentIntentIds = new Set(
-      charges.map((c) => c.paymentIntentId).filter((id) => id !== null),
+      charges
+        .map((c) => c.paymentIntentId)
+        .filter((id) => id !== null && id !== undefined && id !== '')
+        .map((id) => String(id).trim()), // Normalize to string and trim
     );
 
     for (const pi of paymentIntents) {
       // Skip if we already have the charge for this payment intent
-      if (!chargePaymentIntentIds.has(pi.stripeId)) {
+      // Check: charges.payment_intent_id = payment_intents.stripe_id
+      const piId = String(pi.stripeId).trim();
+      if (!chargePaymentIntentIds.has(piId)) {
         const latestCharge = pi.stripeData?.latest_charge;
         const chargeAmount =
           typeof latestCharge === 'object' && latestCharge

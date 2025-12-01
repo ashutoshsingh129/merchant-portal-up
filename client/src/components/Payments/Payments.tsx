@@ -382,6 +382,7 @@ const Payments: React.FC = () => {
             if (response.success) {
                 // Apply client-side filters for customer ID, email, and dispute amount
                 let filteredTransactions = response.data.transactions;
+                console.log(filteredTransactions);
 
                 // Apply customer ID filter
                 if (customerIdFilter) {

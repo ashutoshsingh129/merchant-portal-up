@@ -27,6 +27,7 @@ export class PaymentIntent {
   amount: number;
 
   @Column({ nullable: true, length: 10 })
+  @Index()
   currency: string;
 
   @Column({ nullable: true, length: 50 })
@@ -34,15 +35,18 @@ export class PaymentIntent {
   status: string;
 
   @Column({ name: 'customer_id', nullable: true })
+  @Index()
   customerId: string;
 
   @Column({ name: 'customer_email', nullable: true })
+  @Index()
   customerEmail: string;
 
   @Column({ type: 'text', nullable: true })
   description: string;
 
   @Column({ name: 'payment_method_type', nullable: true, length: 50 })
+  @Index()
   paymentMethodType: string;
 
   @CreateDateColumn({ name: 'created_at' })

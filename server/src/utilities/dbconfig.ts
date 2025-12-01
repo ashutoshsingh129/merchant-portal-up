@@ -205,6 +205,7 @@ export const initializeDatabase = async () => {
         `);
 
     // Create indexes for payment_intents
+    // Single column indexes
     await pool.query(
       `CREATE INDEX IF NOT EXISTS idx_payment_intents_user_id ON payment_intents(user_id)`,
     );
@@ -215,10 +216,40 @@ export const initializeDatabase = async () => {
       `CREATE INDEX IF NOT EXISTS idx_payment_intents_status ON payment_intents(status)`,
     );
     await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_payment_intents_currency ON payment_intents(currency)`,
+    );
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_payment_intents_customer_id ON payment_intents(customer_id)`,
+    );
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_payment_intents_customer_email ON payment_intents(customer_email)`,
+    );
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_payment_intents_payment_method_type ON payment_intents(payment_method_type)`,
+    );
+    await pool.query(
       `CREATE INDEX IF NOT EXISTS idx_payment_intents_created_at ON payment_intents(created_at)`,
     );
     await pool.query(
       `CREATE INDEX IF NOT EXISTS idx_payment_intents_stripe_created_at ON payment_intents(stripe_created_at)`,
+    );
+    
+    // Composite indexes for common query patterns
+    // Most queries filter by user_id first, then sort by stripe_created_at
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_payment_intents_user_stripe_created_at ON payment_intents(user_id, stripe_created_at DESC)`,
+    );
+    // Filter by user_id + status (common filter combination)
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_payment_intents_user_status ON payment_intents(user_id, status)`,
+    );
+    // Filter by user_id + currency (common filter combination)
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_payment_intents_user_currency ON payment_intents(user_id, currency)`,
+    );
+    // Filter by user_id + status + stripe_created_at (common query pattern)
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_payment_intents_user_status_created ON payment_intents(user_id, status, stripe_created_at DESC)`,
     );
     console.log('✅ Payment intents table initialized/verified');
 
@@ -246,6 +277,7 @@ export const initializeDatabase = async () => {
         `);
 
     // Create indexes for charges
+    // Single column indexes
     await pool.query(
       `CREATE INDEX IF NOT EXISTS idx_charges_user_id ON charges(user_id)`,
     );
@@ -256,13 +288,54 @@ export const initializeDatabase = async () => {
       `CREATE INDEX IF NOT EXISTS idx_charges_status ON charges(status)`,
     );
     await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_charges_currency ON charges(currency)`,
+    );
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_charges_customer_id ON charges(customer_id)`,
+    );
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_charges_customer_email ON charges(customer_email)`,
+    );
+    await pool.query(
       `CREATE INDEX IF NOT EXISTS idx_charges_payment_intent_id ON charges(payment_intent_id)`,
+    );
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_charges_payment_method_type ON charges(payment_method_type)`,
+    );
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_charges_refunded ON charges(refunded)`,
     );
     await pool.query(
       `CREATE INDEX IF NOT EXISTS idx_charges_created_at ON charges(created_at)`,
     );
     await pool.query(
       `CREATE INDEX IF NOT EXISTS idx_charges_stripe_created_at ON charges(stripe_created_at)`,
+    );
+    
+    // Composite indexes for common query patterns
+    // Most queries filter by user_id first, then sort by stripe_created_at
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_charges_user_stripe_created_at ON charges(user_id, stripe_created_at DESC)`,
+    );
+    // Filter by user_id + status (common filter combination)
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_charges_user_status ON charges(user_id, status)`,
+    );
+    // Filter by user_id + currency (common filter combination)
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_charges_user_currency ON charges(user_id, currency)`,
+    );
+    // Filter by user_id + payment_intent_id (for deduplication lookups)
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_charges_user_payment_intent_id ON charges(user_id, payment_intent_id)`,
+    );
+    // Filter by user_id + status + stripe_created_at (common query pattern)
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_charges_user_status_created ON charges(user_id, status, stripe_created_at DESC)`,
+    );
+    // Filter by user_id + refunded (for refunded filter)
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_charges_user_refunded ON charges(user_id, refunded)`,
     );
     console.log('✅ Charges table initialized/verified');
 
