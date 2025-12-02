@@ -70,4 +70,8 @@ export class Charge {
   @Column({ name: 'stripe_created_at', nullable: true })
   @Index()
   stripeCreatedAt: Date;
+
+  @Column({ nullable: true, length: 255 })
+  @Index()
+  application: string; // Connected account ID (e.g., "ca_SyjrhLZdQzCqfxFOWbClyQhS15ebJa0u")
 }

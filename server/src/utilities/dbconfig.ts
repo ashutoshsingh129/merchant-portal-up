@@ -253,6 +253,28 @@ export const initializeDatabase = async () => {
     );
     console.log('✅ Payment intents table initialized/verified');
 
+    // Add application column to payment_intents if it doesn't exist (migration)
+    try {
+      const columnExists = await pool.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name='payment_intents' AND column_name='application'
+      `);
+      if (columnExists.rows.length === 0) {
+        console.log('⏳ Adding application column to payment_intents table...');
+        await pool.query(`
+          ALTER TABLE payment_intents 
+          ADD COLUMN application VARCHAR(255)
+        `);
+        await pool.query(
+          `CREATE INDEX IF NOT EXISTS idx_payment_intents_application ON payment_intents(application)`,
+        );
+        console.log('✅ Added application column to payment_intents table');
+      }
+    } catch (error: any) {
+      console.error('⚠️  Error adding application column to payment_intents:', error.message);
+    }
+
     console.log('⏳ Creating charges table...');
     await pool.query(`
             CREATE TABLE IF NOT EXISTS charges (
@@ -338,6 +360,28 @@ export const initializeDatabase = async () => {
       `CREATE INDEX IF NOT EXISTS idx_charges_user_refunded ON charges(user_id, refunded)`,
     );
     console.log('✅ Charges table initialized/verified');
+
+    // Add application column to charges if it doesn't exist (migration)
+    try {
+      const columnExists = await pool.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name='charges' AND column_name='application'
+      `);
+      if (columnExists.rows.length === 0) {
+        console.log('⏳ Adding application column to charges table...');
+        await pool.query(`
+          ALTER TABLE charges 
+          ADD COLUMN application VARCHAR(255)
+        `);
+        await pool.query(
+          `CREATE INDEX IF NOT EXISTS idx_charges_application ON charges(application)`,
+        );
+        console.log('✅ Added application column to charges table');
+      }
+    } catch (error: any) {
+      console.error('⚠️  Error adding application column to charges:', error.message);
+    }
 
     console.log('═══════════════════════════════════════════════════════════');
     console.log('✅ DATABASE INITIALIZATION COMPLETED SUCCESSFULLY');

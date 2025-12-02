@@ -1,6 +1,6 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, Not } from 'typeorm';
 import Stripe from 'stripe';
 import { PaymentIntent } from '../../datastore/models/payment-intent.model';
 import { Charge } from '../../datastore/models/charge.model';
@@ -1151,6 +1151,993 @@ export class StripeSyncService implements OnModuleInit {
   }
 
   /**
+   * Get all connected account IDs for a user (with pagination support)
+   */
+  private async getConnectedAccountIds(userId: number): Promise<string[]> {
+    try {
+      const stripe = await this.getStripeInstanceForUser(userId);
+      const accountIds: string[] = [];
+      let hasMore = true;
+      let startingAfter: string | undefined = undefined;
+      let pageCount = 0;
+      const maxPages = 100; // Limit to prevent infinite loops
+
+      // Fetch all pages of connected accounts
+      while (hasMore && pageCount < maxPages) {
+        const params: any = {
+          limit: 100, // Stripe's maximum
+        };
+
+        if (startingAfter) {
+          params.starting_after = startingAfter;
+        }
+
+        const accountsPage = await stripe.accounts.list(params);
+        hasMore = accountsPage.has_more;
+
+        if (accountsPage.data.length > 0) {
+          const pageAccountIds = accountsPage.data.map((account) => account.id);
+          accountIds.push(...pageAccountIds);
+          startingAfter = accountsPage.data[accountsPage.data.length - 1].id;
+        } else {
+          hasMore = false;
+        }
+
+        pageCount++;
+        console.log(
+          `   📥 Fetched page ${pageCount} of connected accounts (${accountsPage.data.length} accounts in this page, ${accountIds.length} total so far)`,
+        );
+      }
+
+      console.log(
+        `📋 Found ${accountIds.length} connected account(s) for user ${userId}${accountIds.length > 0 ? ` (across ${pageCount} page(s))` : ''}`,
+      );
+      return accountIds;
+    } catch (error: any) {
+      console.error(
+        `Error fetching connected accounts for user ${userId}:`,
+        error.message,
+      );
+      return [];
+    }
+  }
+
+  /**
+   * Sync initial 10 connected account payment intents for a user
+   */
+  async syncInitialConnectedAccountPaymentIntents(
+    userId: number,
+  ): Promise<{ synced: number; skipped: number }> {
+    try {
+      const stripe = await this.getStripeInstanceForUser(userId);
+      const connectedAccountIds = await this.getConnectedAccountIds(userId);
+
+      if (connectedAccountIds.length === 0) {
+        console.log(
+          `⚠️  No connected accounts found for user ${userId}, skipping connected account payment intents sync`,
+        );
+        return { synced: 0, skipped: 0 };
+      }
+
+      let totalSynced = 0;
+      let totalSkipped = 0;
+
+      // Sync payment intents for each connected account
+      for (const accountId of connectedAccountIds) {
+        try {
+          const params: any = {
+            limit: 10, // Only fetch first 10 per account
+            expand: [
+              'data.customer',
+              'data.latest_charge',
+              'data.payment_method',
+            ],
+          };
+
+          const paymentIntentsPage = await stripe.paymentIntents.list(
+            params,
+            { stripeAccount: accountId },
+          );
+
+          console.log(
+            `🔄 Processing ${paymentIntentsPage.data.length} initial payment intents for connected account ${accountId}...`,
+          );
+
+          if (paymentIntentsPage.data.length === 0) {
+            continue;
+          }
+
+          let synced = 0;
+          let skipped = 0;
+          let errorCount = 0;
+
+          for (const pi of paymentIntentsPage.data) {
+            try {
+              const existing = await this.paymentIntentRepository.findOne({
+                where: { stripeId: pi.id, userId },
+              });
+
+              if (existing) {
+                skipped++;
+                continue;
+              }
+
+              const customerInfo = this.extractCustomerInfo(pi);
+              const applicationId = accountId; // Use the connected account ID
+
+              const paymentIntentData = {
+                userId,
+                stripeId: pi.id,
+                stripeData: pi,
+                amount: pi.amount,
+                currency: pi.currency,
+                status: pi.status,
+                customerId: customerInfo.id,
+                customerEmail: customerInfo.email,
+                description: pi.description || null,
+                paymentMethodType: pi.payment_method_types?.[0] || null,
+                stripeCreatedAt: new Date(pi.created * 1000),
+                application: applicationId,
+              };
+
+              // Check if stripeId exists for another user
+              const existingByStripeId = await this.paymentIntentRepository.findOne({
+                where: { stripeId: pi.id },
+              });
+
+              if (existingByStripeId) {
+                if (existingByStripeId.userId === userId) {
+                  await this.paymentIntentRepository.update(
+                    { id: existingByStripeId.id },
+                    { ...paymentIntentData, stripeData: paymentIntentData.stripeData as any },
+                  );
+                  synced++;
+                } else {
+                  skipped++;
+                }
+              } else {
+                const paymentIntent = this.paymentIntentRepository.create(paymentIntentData);
+                await this.paymentIntentRepository.save(paymentIntent);
+                synced++;
+              }
+            } catch (error: any) {
+              errorCount++;
+              console.error(
+                `   ❌ Error syncing connected account payment intent ${pi.id}:`,
+                error.message,
+              );
+              if (error.code) {
+                console.error(`   Error code: ${error.code}, Detail: ${error.detail}`);
+              }
+              if (error.constraint) {
+                console.error(`   Constraint: ${error.constraint}`);
+              }
+              skipped++;
+            }
+          }
+
+          if (errorCount > 0) {
+            console.error(
+              `   ⚠️  Encountered ${errorCount} errors while syncing payment intents for account ${accountId}`,
+            );
+          }
+
+          console.log(
+            `✅ Synced ${synced} payment intents for connected account ${accountId} (${skipped} skipped)`,
+          );
+          totalSynced += synced;
+          totalSkipped += skipped;
+        } catch (error: any) {
+          console.error(
+            `❌ Error syncing payment intents for connected account ${accountId}:`,
+            error.message,
+          );
+        }
+      }
+
+      console.log(
+        `✅ Synced ${totalSynced} total initial connected account payment intents for user ${userId} (${totalSkipped} skipped)`,
+      );
+      return { synced: totalSynced, skipped: totalSkipped };
+    } catch (error: any) {
+      console.error(
+        `Error syncing initial connected account payment intents for user ${userId}:`,
+        error.message,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Sync ALL connected account payment intents for a user using pagination
+   */
+  async syncAllConnectedAccountPaymentIntents(
+    userId: number,
+  ): Promise<{ synced: number; skipped: number }> {
+    try {
+      const stripe = await this.getStripeInstanceForUser(userId);
+      const connectedAccountIds = await this.getConnectedAccountIds(userId);
+
+      if (connectedAccountIds.length === 0) {
+        console.log(
+          `⚠️  No connected accounts found for user ${userId}, skipping connected account payment intents sync`,
+        );
+        return { synced: 0, skipped: 0 };
+      }
+
+      console.log(
+        `═══════════════════════════════════════════════════════════`,
+      );
+      console.log(
+        `🔄 Starting to fetch and save connected account payment intents for user ${userId}...`,
+      );
+      console.log(
+        `   💡 Processing ${connectedAccountIds.length} connected account(s)...`,
+      );
+      console.log(
+        `═══════════════════════════════════════════════════════════`,
+      );
+
+      let totalSynced = 0;
+      let totalSkipped = 0;
+      let totalErrorCount = 0;
+
+      // Process each connected account
+      for (const accountId of connectedAccountIds) {
+        console.log(
+          `\n📋 Processing connected account: ${accountId}`,
+        );
+
+        let hasMore = true;
+        let startingAfter: string | undefined = undefined;
+        let pageCount = 0;
+        const maxPages = 100; // Limit to prevent infinite loops
+        let synced = 0;
+        let skipped = 0;
+        let errorCount = 0;
+        const processBatchSize = 50;
+
+        // Fetch and process incrementally to avoid memory issues
+        while (hasMore && pageCount < maxPages) {
+          const params: any = {
+            limit: 100, // Stripe's maximum
+            expand: [
+              'data.customer',
+              'data.latest_charge',
+              'data.payment_method',
+            ],
+          };
+
+          if (startingAfter) {
+            params.starting_after = startingAfter;
+          }
+
+          const paymentIntentsPage = await stripe.paymentIntents.list(
+            params,
+            { stripeAccount: accountId },
+          );
+          
+          hasMore = paymentIntentsPage.has_more;
+
+          if (paymentIntentsPage.data.length > 0) {
+            startingAfter = paymentIntentsPage.data[paymentIntentsPage.data.length - 1].id;
+          } else {
+            hasMore = false;
+          }
+
+          pageCount++;
+          console.log(
+            `   📥 Fetched page ${pageCount} of payment intents for account ${accountId} (${paymentIntentsPage.data.length} records)`,
+          );
+
+          // Process in smaller batches
+          for (let i = 0; i < paymentIntentsPage.data.length; i += processBatchSize) {
+            const batch = paymentIntentsPage.data.slice(i, i + processBatchSize);
+            const batchNum = Math.floor(i / processBatchSize) + 1;
+            const totalBatches = Math.ceil(paymentIntentsPage.data.length / processBatchSize);
+
+            for (const pi of batch) {
+              try {
+                const existing = await this.paymentIntentRepository.findOne({
+                  where: { stripeId: pi.id, userId },
+                });
+
+                if (existing) {
+                  skipped++;
+                  continue;
+                }
+
+                const customerInfo = this.extractCustomerInfo(pi);
+                const applicationId = accountId;
+
+                const paymentIntentData = {
+                  userId,
+                  stripeId: pi.id,
+                  stripeData: pi,
+                  amount: pi.amount,
+                  currency: pi.currency,
+                  status: pi.status,
+                  customerId: customerInfo.id,
+                  customerEmail: customerInfo.email,
+                  description: pi.description || null,
+                  paymentMethodType: pi.payment_method_types?.[0] || null,
+                  stripeCreatedAt: new Date(pi.created * 1000),
+                  application: applicationId,
+                };
+
+                const existingByStripeId = await this.paymentIntentRepository.findOne({
+                  where: { stripeId: pi.id },
+                });
+
+                if (existingByStripeId) {
+                  if (existingByStripeId.userId === userId) {
+                    await this.paymentIntentRepository.update(
+                      { id: existingByStripeId.id },
+                      { ...paymentIntentData, stripeData: paymentIntentData.stripeData as any },
+                    );
+                    synced++;
+                  } else {
+                    skipped++;
+                  }
+                } else {
+                  try {
+                    const paymentIntent = this.paymentIntentRepository.create(paymentIntentData);
+                    await this.paymentIntentRepository.save(paymentIntent);
+                    synced++;
+                  } catch (saveError: any) {
+                    errorCount++;
+                    if (saveError.code === '23505' || saveError.constraint?.includes('stripe_id')) {
+                      skipped++;
+                    } else {
+                      console.error(`   ❌ Failed to save ${pi.id}:`, saveError.message);
+                      skipped++;
+                    }
+                  }
+                }
+              } catch (error: any) {
+                errorCount++;
+                console.error(
+                  `   ❌ Error syncing payment intent ${pi.id}:`,
+                  error.message,
+                );
+                skipped++;
+              }
+            }
+          }
+
+          if (pageCount % 10 === 0) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+        }
+
+        console.log(
+          `   ✅ Account ${accountId}: ${synced} synced, ${skipped} skipped, ${errorCount} errors (${pageCount} pages)`,
+        );
+        totalSynced += synced;
+        totalSkipped += skipped;
+        totalErrorCount += errorCount;
+      }
+
+      console.log(
+        `═══════════════════════════════════════════════════════════`,
+      );
+      console.log(
+        `✅ Completed syncing connected account payment intents for user ${userId}`,
+      );
+      console.log(
+        `   📊 Final Stats: ${totalSynced} synced, ${totalSkipped} skipped, ${totalErrorCount} errors`,
+      );
+      console.log(
+        `═══════════════════════════════════════════════════════════`,
+      );
+      return { synced: totalSynced, skipped: totalSkipped };
+    } catch (error: any) {
+      console.error(
+        `Error syncing connected account payment intents for user ${userId}:`,
+        error.message,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Sync new connected account payment intents (only new ones since last sync)
+   */
+  async syncNewConnectedAccountPaymentIntents(
+    userId: number,
+  ): Promise<{ synced: number; skipped: number }> {
+    try {
+      const stripe = await this.getStripeInstanceForUser(userId);
+      const connectedAccountIds = await this.getConnectedAccountIds(userId);
+
+      if (connectedAccountIds.length === 0) {
+        return { synced: 0, skipped: 0 };
+      }
+
+      let totalSynced = 0;
+      let totalSkipped = 0;
+
+      // Sync new payment intents for each connected account
+      for (const accountId of connectedAccountIds) {
+        try {
+          // Get the most recent payment intent for this specific account
+          const mostRecent = await this.paymentIntentRepository.findOne({
+            where: { userId, application: accountId },
+            order: { stripeCreatedAt: 'DESC' },
+          });
+
+          const params: any = {
+            limit: 100,
+            expand: ['data.customer', 'data.latest_charge', 'data.payment_method'],
+          };
+
+          // If we have a most recent, only fetch newer ones
+          if (mostRecent?.stripeCreatedAt) {
+            params.created = {
+              gte: Math.floor(mostRecent.stripeCreatedAt.getTime() / 1000),
+            };
+          }
+
+          const paymentIntents = await stripe.paymentIntents.list(
+            params,
+            { stripeAccount: accountId },
+          );
+
+          let synced = 0;
+          let skipped = 0;
+
+          for (const pi of paymentIntents.data) {
+            try {
+              // Skip if we already have this
+              if (pi.id === mostRecent?.stripeId) {
+                continue;
+              }
+
+              const existing = await this.paymentIntentRepository.findOne({
+                where: { stripeId: pi.id, userId },
+              });
+
+              if (existing) {
+                skipped++;
+                continue;
+              }
+
+              const customerInfo = this.extractCustomerInfo(pi);
+              const applicationId = accountId;
+
+              const paymentIntentData = {
+                userId,
+                stripeId: pi.id,
+                stripeData: pi,
+                amount: pi.amount,
+                currency: pi.currency,
+                status: pi.status,
+                customerId: customerInfo.id,
+                customerEmail: customerInfo.email,
+                description: pi.description || null,
+                paymentMethodType: pi.payment_method_types?.[0] || null,
+                stripeCreatedAt: new Date(pi.created * 1000),
+                application: applicationId,
+              };
+
+              const existingByStripeId = await this.paymentIntentRepository.findOne({
+                where: { stripeId: pi.id },
+              });
+
+              if (existingByStripeId) {
+                if (existingByStripeId.userId === userId) {
+                  await this.paymentIntentRepository.update(
+                    { id: existingByStripeId.id },
+                    { ...paymentIntentData, stripeData: paymentIntentData.stripeData as any },
+                  );
+                  synced++;
+                } else {
+                  skipped++;
+                }
+              } else {
+                const paymentIntent = this.paymentIntentRepository.create(paymentIntentData);
+                await this.paymentIntentRepository.save(paymentIntent);
+                synced++;
+              }
+            } catch (error: any) {
+              console.error(
+                `Error syncing connected account payment intent ${pi.id}:`,
+                error.message,
+              );
+              skipped++;
+            }
+          }
+
+          totalSynced += synced;
+          totalSkipped += skipped;
+        } catch (error: any) {
+          console.error(
+            `Error syncing new payment intents for connected account ${accountId}:`,
+            error.message,
+          );
+        }
+      }
+
+      if (totalSynced > 0) {
+        console.log(
+          `✅ Synced ${totalSynced} new connected account payment intents for user ${userId}`,
+        );
+      }
+      return { synced: totalSynced, skipped: totalSkipped };
+    } catch (error: any) {
+      console.error(
+        `Error syncing new connected account payment intents for user ${userId}:`,
+        error.message,
+      );
+      return { synced: 0, skipped: 0 };
+    }
+  }
+
+  /**
+   * Sync initial 10 connected account charges for a user
+   */
+  async syncInitialConnectedAccountCharges(
+    userId: number,
+  ): Promise<{ synced: number; skipped: number }> {
+    try {
+      const stripe = await this.getStripeInstanceForUser(userId);
+      const connectedAccountIds = await this.getConnectedAccountIds(userId);
+
+      if (connectedAccountIds.length === 0) {
+        console.log(
+          `⚠️  No connected accounts found for user ${userId}, skipping connected account charges sync`,
+        );
+        return { synced: 0, skipped: 0 };
+      }
+
+      let totalSynced = 0;
+      let totalSkipped = 0;
+
+      // Sync charges for each connected account
+      for (const accountId of connectedAccountIds) {
+        try {
+          const params: any = {
+            limit: 10, // Only fetch first 10 per account
+            expand: ['data.customer', 'data.refunds', 'data.payment_intent'],
+          };
+
+          const chargesPage = await stripe.charges.list(params, {
+            stripeAccount: accountId,
+          });
+
+          console.log(
+            `🔄 Processing ${chargesPage.data.length} initial charges for connected account ${accountId}...`,
+          );
+
+          if (chargesPage.data.length === 0) {
+            continue;
+          }
+
+          let synced = 0;
+          let skipped = 0;
+          let errorCount = 0;
+
+          for (const charge of chargesPage.data) {
+            try {
+              const existing = await this.chargeRepository.findOne({
+                where: { stripeId: charge.id, userId },
+              });
+
+              if (existing) {
+                skipped++;
+                continue;
+              }
+
+              const customerInfo = this.extractCustomerInfo(charge);
+              const paymentIntentId =
+                typeof charge.payment_intent === 'string'
+                  ? charge.payment_intent
+                  : charge.payment_intent?.id || null;
+              const applicationId = accountId;
+
+              const chargeData = {
+                userId,
+                stripeId: charge.id,
+                stripeData: charge,
+                amount: charge.amount,
+                currency: charge.currency,
+                status: charge.status,
+                customerId: customerInfo.id,
+                customerEmail: customerInfo.email,
+                description: charge.description || null,
+                paymentIntentId,
+                paymentMethodType: charge.payment_method_details?.type || null,
+                amountRefunded: charge.amount_refunded || 0,
+                refunded: charge.refunded || false,
+                stripeCreatedAt: new Date(charge.created * 1000),
+                application: applicationId,
+              };
+
+              const existingByStripeId = await this.chargeRepository.findOne({
+                where: { stripeId: charge.id },
+              });
+
+              if (existingByStripeId) {
+                if (existingByStripeId.userId === userId) {
+                  await this.chargeRepository.update(
+                    { id: existingByStripeId.id },
+                    { ...chargeData, stripeData: chargeData.stripeData as any },
+                  );
+                  synced++;
+                } else {
+                  skipped++;
+                }
+              } else {
+                const chargeEntity = this.chargeRepository.create(chargeData);
+                await this.chargeRepository.save(chargeEntity);
+                synced++;
+              }
+            } catch (error: any) {
+              errorCount++;
+              console.error(
+                `   ❌ Error syncing connected account charge ${charge.id}:`,
+                error.message,
+              );
+              skipped++;
+            }
+          }
+
+          if (errorCount > 0) {
+            console.error(
+              `   ⚠️  Encountered ${errorCount} errors while syncing charges for account ${accountId}`,
+            );
+          }
+
+          console.log(
+            `✅ Synced ${synced} charges for connected account ${accountId} (${skipped} skipped)`,
+          );
+          totalSynced += synced;
+          totalSkipped += skipped;
+        } catch (error: any) {
+          console.error(
+            `❌ Error syncing charges for connected account ${accountId}:`,
+            error.message,
+          );
+        }
+      }
+
+      console.log(
+        `✅ Synced ${totalSynced} total initial connected account charges for user ${userId} (${totalSkipped} skipped)`,
+      );
+      return { synced: totalSynced, skipped: totalSkipped };
+    } catch (error: any) {
+      console.error(
+        `Error syncing initial connected account charges for user ${userId}:`,
+        error.message,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Sync ALL connected account charges for a user using pagination
+   */
+  async syncAllConnectedAccountCharges(
+    userId: number,
+  ): Promise<{ synced: number; skipped: number }> {
+    try {
+      const stripe = await this.getStripeInstanceForUser(userId);
+      const connectedAccountIds = await this.getConnectedAccountIds(userId);
+
+      if (connectedAccountIds.length === 0) {
+        console.log(
+          `⚠️  No connected accounts found for user ${userId}, skipping connected account charges sync`,
+        );
+        return { synced: 0, skipped: 0 };
+      }
+
+      console.log(
+        `═══════════════════════════════════════════════════════════`,
+      );
+      console.log(
+        `🔄 Starting to fetch and save connected account charges for user ${userId}...`,
+      );
+      console.log(
+        `   💡 Processing ${connectedAccountIds.length} connected account(s)...`,
+      );
+      console.log(
+        `═══════════════════════════════════════════════════════════`,
+      );
+
+      let totalSynced = 0;
+      let totalSkipped = 0;
+      let totalErrorCount = 0;
+
+      // Process each connected account
+      for (const accountId of connectedAccountIds) {
+        console.log(
+          `\n📋 Processing connected account: ${accountId}`,
+        );
+
+        let hasMore = true;
+        let startingAfter: string | undefined = undefined;
+        let pageCount = 0;
+        const maxPages = 100;
+        let synced = 0;
+        let skipped = 0;
+        let errorCount = 0;
+        const processBatchSize = 50;
+
+        // Fetch and process incrementally to avoid memory issues
+        while (hasMore && pageCount < maxPages) {
+          const params: any = {
+            limit: 100,
+            expand: ['data.customer', 'data.refunds', 'data.payment_intent'],
+          };
+
+          if (startingAfter) {
+            params.starting_after = startingAfter;
+          }
+
+          const chargesPage = await stripe.charges.list(params, {
+            stripeAccount: accountId,
+          });
+          
+          hasMore = chargesPage.has_more;
+
+          if (chargesPage.data.length > 0) {
+            startingAfter = chargesPage.data[chargesPage.data.length - 1].id;
+          } else {
+            hasMore = false;
+          }
+
+          pageCount++;
+          console.log(
+            `   📥 Fetched page ${pageCount} of charges for account ${accountId} (${chargesPage.data.length} records)`,
+          );
+
+          // Process in smaller batches
+          for (let i = 0; i < chargesPage.data.length; i += processBatchSize) {
+            const batch = chargesPage.data.slice(i, i + processBatchSize);
+
+            for (const charge of batch) {
+              try {
+                const existing = await this.chargeRepository.findOne({
+                  where: { stripeId: charge.id, userId },
+                });
+
+                if (existing) {
+                  skipped++;
+                  continue;
+                }
+
+                const customerInfo = this.extractCustomerInfo(charge);
+                const paymentIntentId =
+                  typeof charge.payment_intent === 'string'
+                    ? charge.payment_intent
+                    : charge.payment_intent?.id || null;
+                const applicationId = accountId;
+
+                const chargeData = {
+                  userId,
+                  stripeId: charge.id,
+                  stripeData: charge,
+                  amount: charge.amount,
+                  currency: charge.currency,
+                  status: charge.status,
+                  customerId: customerInfo.id,
+                  customerEmail: customerInfo.email,
+                  description: charge.description || null,
+                  paymentIntentId,
+                  paymentMethodType: charge.payment_method_details?.type || null,
+                  amountRefunded: charge.amount_refunded || 0,
+                  refunded: charge.refunded || false,
+                  stripeCreatedAt: new Date(charge.created * 1000),
+                  application: applicationId,
+                };
+
+                const existingByStripeId = await this.chargeRepository.findOne({
+                  where: { stripeId: charge.id },
+                });
+
+                if (existingByStripeId) {
+                  if (existingByStripeId.userId === userId) {
+                    await this.chargeRepository.update(
+                      { id: existingByStripeId.id },
+                      { ...chargeData, stripeData: chargeData.stripeData as any },
+                    );
+                    synced++;
+                  } else {
+                    skipped++;
+                  }
+                } else {
+                  try {
+                    const chargeEntity = this.chargeRepository.create(chargeData);
+                    await this.chargeRepository.save(chargeEntity);
+                    synced++;
+                  } catch (saveError: any) {
+                    errorCount++;
+                    if (saveError.code === '23505' || saveError.constraint?.includes('stripe_id')) {
+                      skipped++;
+                    } else {
+                      console.error(`   ❌ Failed to save ${charge.id}:`, saveError.message);
+                      skipped++;
+                    }
+                  }
+                }
+              } catch (error: any) {
+                errorCount++;
+                console.error(
+                  `   ❌ Error syncing charge ${charge.id}:`,
+                  error.message,
+                );
+                skipped++;
+              }
+            }
+          }
+
+          if (pageCount % 10 === 0) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+        }
+
+        console.log(
+          `   ✅ Account ${accountId}: ${synced} synced, ${skipped} skipped, ${errorCount} errors (${pageCount} pages)`,
+        );
+        totalSynced += synced;
+        totalSkipped += skipped;
+        totalErrorCount += errorCount;
+      }
+
+      console.log(
+        `═══════════════════════════════════════════════════════════`,
+      );
+      console.log(
+        `✅ Completed syncing connected account charges for user ${userId}`,
+      );
+      console.log(
+        `   📊 Final Stats: ${totalSynced} synced, ${totalSkipped} skipped, ${totalErrorCount} errors`,
+      );
+      console.log(
+        `═══════════════════════════════════════════════════════════`,
+      );
+      return { synced: totalSynced, skipped: totalSkipped };
+    } catch (error: any) {
+      console.error(`Error syncing connected account charges for user ${userId}:`, error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Sync new connected account charges (only new ones since last sync)
+   */
+  async syncNewConnectedAccountCharges(
+    userId: number,
+  ): Promise<{ synced: number; skipped: number }> {
+    try {
+      const stripe = await this.getStripeInstanceForUser(userId);
+      const connectedAccountIds = await this.getConnectedAccountIds(userId);
+
+      if (connectedAccountIds.length === 0) {
+        return { synced: 0, skipped: 0 };
+      }
+
+      let totalSynced = 0;
+      let totalSkipped = 0;
+
+      // Sync new charges for each connected account
+      for (const accountId of connectedAccountIds) {
+        try {
+          // Get the most recent charge for this specific account
+          const mostRecent = await this.chargeRepository.findOne({
+            where: { userId, application: accountId },
+            order: { stripeCreatedAt: 'DESC' },
+          });
+
+          const params: any = {
+            limit: 100,
+            expand: ['data.customer', 'data.refunds', 'data.payment_intent'],
+          };
+
+          // If we have a most recent, only fetch newer ones
+          if (mostRecent?.stripeCreatedAt) {
+            params.created = {
+              gte: Math.floor(mostRecent.stripeCreatedAt.getTime() / 1000),
+            };
+          }
+
+          const charges = await stripe.charges.list(params, {
+            stripeAccount: accountId,
+          });
+
+          let synced = 0;
+          let skipped = 0;
+
+          for (const charge of charges.data) {
+            try {
+              // Skip if we already have this
+              if (charge.id === mostRecent?.stripeId) {
+                continue;
+              }
+
+              const existing = await this.chargeRepository.findOne({
+                where: { stripeId: charge.id, userId },
+              });
+
+              if (existing) {
+                skipped++;
+                continue;
+              }
+
+              const customerInfo = this.extractCustomerInfo(charge);
+              const paymentIntentId =
+                typeof charge.payment_intent === 'string'
+                  ? charge.payment_intent
+                  : charge.payment_intent?.id || null;
+              const applicationId = accountId;
+
+              const chargeData = {
+                userId,
+                stripeId: charge.id,
+                stripeData: charge,
+                amount: charge.amount,
+                currency: charge.currency,
+                status: charge.status,
+                customerId: customerInfo.id,
+                customerEmail: customerInfo.email,
+                description: charge.description || null,
+                paymentIntentId,
+                paymentMethodType: charge.payment_method_details?.type || null,
+                amountRefunded: charge.amount_refunded || 0,
+                refunded: charge.refunded || false,
+                stripeCreatedAt: new Date(charge.created * 1000),
+                application: applicationId,
+              };
+
+              const existingByStripeId = await this.chargeRepository.findOne({
+                where: { stripeId: charge.id },
+              });
+
+              if (existingByStripeId) {
+                if (existingByStripeId.userId === userId) {
+                  await this.chargeRepository.update(
+                    { id: existingByStripeId.id },
+                    { ...chargeData, stripeData: chargeData.stripeData as any },
+                  );
+                  synced++;
+                } else {
+                  skipped++;
+                }
+              } else {
+                const chargeEntity = this.chargeRepository.create(chargeData);
+                await this.chargeRepository.save(chargeEntity);
+                synced++;
+              }
+            } catch (error: any) {
+              console.error(`Error syncing connected account charge ${charge.id}:`, error.message);
+              skipped++;
+            }
+          }
+
+          totalSynced += synced;
+          totalSkipped += skipped;
+        } catch (error: any) {
+          console.error(
+            `Error syncing new charges for connected account ${accountId}:`,
+            error.message,
+          );
+        }
+      }
+
+      if (totalSynced > 0) {
+        console.log(`✅ Synced ${totalSynced} new connected account charges for user ${userId}`);
+      }
+      return { synced: totalSynced, skipped: totalSkipped };
+    } catch (error: any) {
+      console.error(
+        `Error syncing new connected account charges for user ${userId}:`,
+        error.message,
+      );
+      return { synced: 0, skipped: 0 };
+    }
+  }
+
+  /**
    * Sync new charges (only new ones since last sync)
    */
   async syncNewCharges(
@@ -1392,11 +2379,40 @@ export class StripeSyncService implements OnModuleInit {
           );
           console.error(error.stack);
         }
+
+        // Sync connected account payment intents and charges
+        try {
+          const connectedPiResult = await this.syncAllConnectedAccountPaymentIntents(userId);
+          console.log(
+            `   Connected Account Payment Intents: ${connectedPiResult.synced} synced, ${connectedPiResult.skipped} skipped`,
+          );
+        } catch (error: any) {
+          console.error(
+            `   ❌ Error syncing connected account payment intents for user ${userId}:`,
+            error.message,
+          );
+          console.error(error.stack);
+        }
+
+        try {
+          const connectedChargeResult = await this.syncAllConnectedAccountCharges(userId);
+          console.log(
+            `   Connected Account Charges: ${connectedChargeResult.synced} synced, ${connectedChargeResult.skipped} skipped`,
+          );
+        } catch (error: any) {
+          console.error(
+            `   ❌ Error syncing connected account charges for user ${userId}:`,
+            error.message,
+          );
+          console.error(error.stack);
+        }
         console.log(`✅ Initial sync completed for user ${userId}`);
       } else {
         // Background sync: fetch only new records
         await this.syncNewPaymentIntents(userId);
         await this.syncNewCharges(userId);
+        await this.syncNewConnectedAccountPaymentIntents(userId);
+        await this.syncNewConnectedAccountCharges(userId);
       }
     } catch (error: any) {
       console.error(`❌ Error syncing for user ${userId}:`, error.message);
