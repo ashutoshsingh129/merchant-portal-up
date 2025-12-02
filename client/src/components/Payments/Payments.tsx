@@ -371,11 +371,17 @@ const Payments: React.FC = () => {
             }
 
             // Use statusFilter if it has values, otherwise use selectedSummary
+            // Note: selectedSummary is only for filtering transactions, NOT for summary statistics
             const statusParam =
                 statusFilter.length === 0 && selectedSummary !== 'all'
                     ? selectedSummary
                     : undefined;
             const statusFilterParam =
+                statusFilter.length > 0 ? statusFilter : undefined;
+
+            // For summary: Only use statusFilter (dropdown), NOT selectedSummary (card clicks)
+            // Statistics should always show overall counts, only filtered by other criteria
+            const summaryStatusFilterParam =
                 statusFilter.length > 0 ? statusFilter : undefined;
 
             // Fetch transactions and summary from database with filters
@@ -401,8 +407,10 @@ const Payments: React.FC = () => {
                     last4Digits: last4DigitsFilter || undefined,
                 }),
                 stripeService.getSummaryFromDb({
-                    status: statusParam,
-                    statusFilter: statusFilterParam,
+                    // Don't pass status or statusFilter from selectedSummary to summary
+                    // Summary should only be filtered by statusFilter dropdown, not by card clicks
+                    status: undefined,
+                    statusFilter: summaryStatusFilterParam,
                     days: daysParam,
                     dateFilterType: dateFilterTypeParam,
                     dateFilterInput: dateFilterInputParam,
