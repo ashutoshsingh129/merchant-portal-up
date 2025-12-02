@@ -628,6 +628,7 @@ const Payments: React.FC = () => {
     const [syncStatus, setSyncStatus] = useState<string>('');
     const batchSyncIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const hasCheckedInitialSync = useRef(false);
+    const consecutiveNoMoreRecordsRef = useRef(0);
 
     // Start background batch sync (100 records per request)
     const startBackgroundBatchSync = useCallback(() => {
@@ -635,6 +636,9 @@ const Payments: React.FC = () => {
         if (batchSyncIntervalRef.current) {
             clearInterval(batchSyncIntervalRef.current);
         }
+
+        // Reset counter
+        consecutiveNoMoreRecordsRef.current = 0;
 
         // Start batch sync immediately, then continue every 5 seconds
         const syncBatch = async () => {
@@ -652,16 +656,61 @@ const Payments: React.FC = () => {
                         setSyncStatus(
                             `Syncing in background: ${totalSynced} records...`
                         );
+                        setIsSyncing(true);
+                        consecutiveNoMoreRecordsRef.current = 0; // Reset counter when we sync records
                     }
 
-                    // If no more records to sync, stop the interval
+                    // If no more platform records to sync, wait a bit before showing "All records synced"
+                    // This allows time for connected accounts to sync in the background
                     if (!response.data.hasMore) {
-                        if (batchSyncIntervalRef.current) {
-                            clearInterval(batchSyncIntervalRef.current);
-                            batchSyncIntervalRef.current = null;
+                        consecutiveNoMoreRecordsRef.current++;
+
+                        // Keep syncing state active for a few more cycles to allow connected accounts to sync
+                        // Only show "All records synced" after 3 consecutive checks with no more records
+                        if (consecutiveNoMoreRecordsRef.current >= 3) {
+                            // Check if there are connected account records that might still be syncing
+                            try {
+                                const transactionsResponse =
+                                    await stripeService.getTransactionsFromDb({
+                                        page: 1,
+                                        limit: 1,
+                                    });
+
+                                // If we have very few records, might still be syncing
+                                if (
+                                    transactionsResponse.success &&
+                                    transactionsResponse.data.total < 10
+                                ) {
+                                    setSyncStatus(
+                                        'Syncing data from connected accounts...'
+                                    );
+                                    setIsSyncing(true);
+                                    consecutiveNoMoreRecordsRef.current = 0; // Reset to continue checking
+                                    return; // Continue checking
+                                }
+                            } catch (error) {
+                                console.error(
+                                    'Error checking transaction count:',
+                                    error
+                                );
+                            }
+
+                            // All records synced
+                            if (batchSyncIntervalRef.current) {
+                                clearInterval(batchSyncIntervalRef.current);
+                                batchSyncIntervalRef.current = null;
+                            }
+                            setSyncStatus('All records synced');
+                            setIsSyncing(false);
+                        } else {
+                            // Still waiting, show syncing status
+                            setSyncStatus(
+                                'Checking for more records from connected accounts...'
+                            );
+                            setIsSyncing(true);
                         }
-                        setSyncStatus('All records synced');
-                        setIsSyncing(false);
+                    } else {
+                        consecutiveNoMoreRecordsRef.current = 0; // Reset counter when there's more to sync
                     }
                 }
             } catch (error) {

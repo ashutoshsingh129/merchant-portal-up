@@ -149,7 +149,7 @@ const Dashboard: React.FC = () => {
 
     useEffect(() => {
         fetchVolumeData();
-    }, [fetchVolumeData]);
+    }, [selectedDays, selectedDate]);
 
     const formatCurrency = (value: number) => {
         return new Intl.NumberFormat('en-US', {
@@ -409,7 +409,11 @@ const Dashboard: React.FC = () => {
                                     color: '#2d3748',
                                 }}
                             >
-                                Volume Over Time
+                                {volumeType === 'newCustomers'
+                                    ? 'New Customer Onboarding'
+                                    : volumeType === 'gross'
+                                      ? 'Gross Volume Over Time'
+                                      : 'Net Volume Over Time'}
                             </Typography>
                             {loading ? (
                                 <Box
@@ -510,7 +514,7 @@ const Dashboard: React.FC = () => {
                                             <Line
                                                 type="monotone"
                                                 dataKey="newCustomers"
-                                                name="New Customers"
+                                                name="New Customer Onboarding"
                                                 stroke="#3b82f6"
                                                 strokeWidth={2}
                                                 dot={{ r: 3 }}

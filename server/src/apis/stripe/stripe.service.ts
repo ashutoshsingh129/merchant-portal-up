@@ -3219,18 +3219,74 @@ export class StripeService {
     }
 
     try {
-      // Fetch payment intents with latest_charge expanded to get net amounts
-      const payments = await stripe.paymentIntents.list({
-        limit: 100,
-        created: { gte: startTime, lte: endTime },
-        expand: ['data.latest_charge.balance_transaction'],
-      });
+      // Fetch ALL payment intents with latest_charge expanded to get net amounts (with pagination)
+      const allPayments: any[] = [];
+      let hasMorePayments = true;
+      let startingAfterPayment: string | undefined = undefined;
+      let paymentPageCount = 0;
+      const maxPaymentPages = 100; // Safety limit
 
-      // Fetch customers created in the same time period
-      const customers = await stripe.customers.list({
-        limit: 100,
-        created: { gte: startTime, lte: endTime },
-      });
+      while (hasMorePayments && paymentPageCount < maxPaymentPages) {
+        const paymentParams: any = {
+          limit: 100, // Stripe's maximum
+          created: { gte: startTime, lte: endTime },
+          expand: ['data.latest_charge.balance_transaction'],
+        };
+
+        if (startingAfterPayment) {
+          paymentParams.starting_after = startingAfterPayment;
+        }
+
+        const paymentsPage = await stripe.paymentIntents.list(paymentParams);
+        allPayments.push(...paymentsPage.data);
+        hasMorePayments = paymentsPage.has_more;
+        
+        if (paymentsPage.data.length > 0) {
+          startingAfterPayment = paymentsPage.data[paymentsPage.data.length - 1].id;
+        } else {
+          hasMorePayments = false;
+        }
+        
+        paymentPageCount++;
+      }
+
+      console.log(
+        `📊 Fetched ${allPayments.length} payment intents across ${paymentPageCount} page(s) for volume data`,
+      );
+
+      // Fetch ALL customers created in the same time period with pagination
+      const allCustomers: any[] = [];
+      let hasMoreCustomers = true;
+      let startingAfterCustomer: string | undefined = undefined;
+      let customerPageCount = 0;
+      const maxCustomerPages = 100; // Safety limit
+
+      while (hasMoreCustomers && customerPageCount < maxCustomerPages) {
+        const customerParams: any = {
+          limit: 100, // Stripe's maximum
+          created: { gte: startTime, lte: endTime },
+        };
+
+        if (startingAfterCustomer) {
+          customerParams.starting_after = startingAfterCustomer;
+        }
+
+        const customersPage = await stripe.customers.list(customerParams);
+        allCustomers.push(...customersPage.data);
+        hasMoreCustomers = customersPage.has_more;
+        
+        if (customersPage.data.length > 0) {
+          startingAfterCustomer = customersPage.data[customersPage.data.length - 1].id;
+        } else {
+          hasMoreCustomers = false;
+        }
+        
+        customerPageCount++;
+      }
+
+      console.log(
+        `📊 Fetched ${allCustomers.length} customers across ${customerPageCount} page(s) for volume data`,
+      );
 
       // Group data by time period
       const volumeMap = new Map<
@@ -3238,7 +3294,7 @@ export class StripeService {
         { gross: number; net: number; count: number; newCustomers: number }
       >();
 
-      payments.data.forEach((payment) => {
+      allPayments.forEach((payment) => {
         if (payment.status !== 'succeeded') return;
 
         const created = payment.created;
@@ -3284,7 +3340,7 @@ export class StripeService {
       });
 
       // Count new customers by time period
-      customers.data.forEach((customer) => {
+      allCustomers.forEach((customer) => {
         const created = customer.created;
         let timeKey: string;
 

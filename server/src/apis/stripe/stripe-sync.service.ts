@@ -2265,7 +2265,7 @@ export class StripeSyncService implements OnModuleInit {
     try {
       console.log(`🔄 Starting initial sync (first 10 records) for user ${userId}...`);
       
-      const [piResult, chargeResult] = await Promise.all([
+      const [piResult, chargeResult, connectedPiResult, connectedChargeResult] = await Promise.all([
         this.syncInitialPaymentIntents(userId).catch((error: any) => {
           console.error(
             `   ❌ Error syncing initial payment intents for user ${userId}:`,
@@ -2280,15 +2280,38 @@ export class StripeSyncService implements OnModuleInit {
           );
           return { synced: 0, skipped: 0 };
         }),
+        this.syncInitialConnectedAccountPaymentIntents(userId).catch((error: any) => {
+          console.error(
+            `   ❌ Error syncing initial connected account payment intents for user ${userId}:`,
+            error.message,
+          );
+          return { synced: 0, skipped: 0 };
+        }),
+        this.syncInitialConnectedAccountCharges(userId).catch((error: any) => {
+          console.error(
+            `   ❌ Error syncing initial connected account charges for user ${userId}:`,
+            error.message,
+          );
+          return { synced: 0, skipped: 0 };
+        }),
       ]);
 
+      const totalPISynced = piResult.synced + connectedPiResult.synced;
+      const totalChargesSynced = chargeResult.synced + connectedChargeResult.synced;
+
       console.log(
-        `✅ Initial sync completed for user ${userId}: ${piResult.synced} PIs, ${chargeResult.synced} Charges`,
+        `✅ Initial sync completed for user ${userId}: ${totalPISynced} PIs (${piResult.synced} platform, ${connectedPiResult.synced} connected), ${totalChargesSynced} Charges (${chargeResult.synced} platform, ${connectedChargeResult.synced} connected)`,
       );
 
       return {
-        paymentIntents: piResult,
-        charges: chargeResult,
+        paymentIntents: { 
+          synced: totalPISynced, 
+          skipped: piResult.skipped + connectedPiResult.skipped 
+        },
+        charges: { 
+          synced: totalChargesSynced, 
+          skipped: chargeResult.skipped + connectedChargeResult.skipped 
+        },
       };
     } catch (error: any) {
       console.error(`❌ Error in initial sync for user ${userId}:`, error.message);
