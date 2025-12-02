@@ -1128,10 +1128,25 @@ export class StripeService {
         }
     }
 
-    // Get transactions from database with pagination
+    // Get transactions from database with pagination and filters
     async getTransactionsFromDb(params?: {
         page?: number;
         limit?: number;
+        status?: string;
+        statusFilter?: string[];
+        days?: number;
+        dateFilterType?: string;
+        dateFilterInput?: string;
+        dateFilterInput2?: string;
+        amount?: number;
+        amountOperator?: string;
+        currency?: string;
+        paymentMethod?: string;
+        customerId?: string;
+        email?: string;
+        cardBrand?: string;
+        declineReason?: string;
+        last4Digits?: string;
     }): Promise<
         ApiResponse<{
             transactions: StripeTransaction[];
@@ -1146,6 +1161,32 @@ export class StripeService {
             const query = new URLSearchParams();
             if (params?.page) query.append('page', String(params.page));
             if (params?.limit) query.append('limit', String(params.limit));
+            if (params?.status) query.append('status', params.status);
+            if (params?.statusFilter && params.statusFilter.length > 0) {
+                query.append('statusFilter', params.statusFilter.join(','));
+            }
+            if (params?.days) query.append('days', String(params.days));
+            if (params?.dateFilterType)
+                query.append('dateFilterType', params.dateFilterType);
+            if (params?.dateFilterInput)
+                query.append('dateFilterInput', params.dateFilterInput);
+            if (params?.dateFilterInput2)
+                query.append('dateFilterInput2', params.dateFilterInput2);
+            if (params?.amount !== undefined)
+                query.append('amount', String(params.amount));
+            if (params?.amountOperator)
+                query.append('amountOperator', params.amountOperator);
+            if (params?.currency) query.append('currency', params.currency);
+            if (params?.paymentMethod)
+                query.append('paymentMethod', params.paymentMethod);
+            if (params?.customerId)
+                query.append('customerId', params.customerId);
+            if (params?.email) query.append('email', params.email);
+            if (params?.cardBrand) query.append('cardBrand', params.cardBrand);
+            if (params?.declineReason)
+                query.append('declineReason', params.declineReason);
+            if (params?.last4Digits)
+                query.append('last4Digits', params.last4Digits);
 
             const res = await fetch(
                 `${this.baseUrl}/stripe/transactions-db?${query.toString()}`,
@@ -1204,6 +1245,99 @@ export class StripeService {
                     error instanceof Error
                         ? error.message
                         : 'Failed to fetch transactions from database',
+                success: false,
+            };
+        }
+    }
+
+    // Get summary/statistics from database with filters
+    async getSummaryFromDb(params?: {
+        status?: string;
+        statusFilter?: string[];
+        days?: number;
+        dateFilterType?: string;
+        dateFilterInput?: string;
+        dateFilterInput2?: string;
+        amount?: number;
+        amountOperator?: string;
+        currency?: string;
+        paymentMethod?: string;
+        customerId?: string;
+        email?: string;
+        cardBrand?: string;
+        declineReason?: string;
+        last4Digits?: string;
+    }): Promise<
+        ApiResponse<{
+            total: number;
+            succeeded: number;
+            pending: number;
+            failed: number;
+            refunded: number;
+            disputed: number;
+            uncaptured: number;
+        }>
+    > {
+        try {
+            const query = new URLSearchParams();
+            if (params?.status) query.append('status', params.status);
+            if (params?.statusFilter && params.statusFilter.length > 0) {
+                query.append('statusFilter', params.statusFilter.join(','));
+            }
+            if (params?.days) query.append('days', String(params.days));
+            if (params?.dateFilterType)
+                query.append('dateFilterType', params.dateFilterType);
+            if (params?.dateFilterInput)
+                query.append('dateFilterInput', params.dateFilterInput);
+            if (params?.dateFilterInput2)
+                query.append('dateFilterInput2', params.dateFilterInput2);
+            if (params?.amount !== undefined)
+                query.append('amount', String(params.amount));
+            if (params?.amountOperator)
+                query.append('amountOperator', params.amountOperator);
+            if (params?.currency) query.append('currency', params.currency);
+            if (params?.paymentMethod)
+                query.append('paymentMethod', params.paymentMethod);
+            if (params?.customerId)
+                query.append('customerId', params.customerId);
+            if (params?.email) query.append('email', params.email);
+            if (params?.cardBrand) query.append('cardBrand', params.cardBrand);
+            if (params?.declineReason)
+                query.append('declineReason', params.declineReason);
+            if (params?.last4Digits)
+                query.append('last4Digits', params.last4Digits);
+
+            const res = await fetch(
+                `${this.baseUrl}/stripe/transactions-db-summary?${query.toString()}`,
+                {
+                    headers: this.getAuthHeaders(),
+                }
+            );
+            if (!res.ok)
+                throw new Error('Failed to fetch summary from database');
+            const body = await res.json();
+
+            return {
+                data: body,
+                message: 'Summary fetched successfully from database',
+                success: true,
+            };
+        } catch (error) {
+            console.error('Error fetching summary from database:', error);
+            return {
+                data: {
+                    total: 0,
+                    succeeded: 0,
+                    pending: 0,
+                    failed: 0,
+                    refunded: 0,
+                    disputed: 0,
+                    uncaptured: 0,
+                },
+                message:
+                    error instanceof Error
+                        ? error.message
+                        : 'Failed to fetch summary from database',
                 success: false,
             };
         }

@@ -354,116 +354,80 @@ const Payments: React.FC = () => {
             setLoading(true);
             setError(null);
 
-            // Fetch platform transactions only
+            // Build date filter parameters
+            let dateFilterTypeParam: string | undefined;
+            let dateFilterInputParam: string | undefined;
+            let dateFilterInput2Param: string | undefined;
+            let daysParam: number | undefined;
+
+            if (dateFilterType === 'in_last' && dateFilterDays) {
+                daysParam = dateFilterDays;
+            } else if (dateFilterType !== 'in_last' && dateFilterInput) {
+                dateFilterTypeParam = dateFilterType;
+                dateFilterInputParam = dateFilterInput;
+                if (dateFilterType === 'between' && dateFilterInput2) {
+                    dateFilterInput2Param = dateFilterInput2;
+                }
+            }
+
             // Use statusFilter if it has values, otherwise use selectedSummary
-            const requestParams = {
-                limit: 50, // Smaller batches for faster loading
-                page: currentPage,
-                status:
-                    statusFilter.length === 0 && selectedSummary !== 'all'
-                        ? selectedSummary
-                        : undefined,
-                statusFilter:
-                    statusFilter.length > 0 ? statusFilter : undefined,
-                days: dateFilterDays || undefined,
-                amount: amountFilter !== null ? amountFilter : undefined,
-                amountOperator:
-                    amountFilter !== null ? amountOperator : undefined,
-                currency: currencyFilter || undefined,
-                paymentMethod: paymentMethodFilter || undefined,
-            };
+            const statusParam =
+                statusFilter.length === 0 && selectedSummary !== 'all'
+                    ? selectedSummary
+                    : undefined;
+            const statusFilterParam =
+                statusFilter.length > 0 ? statusFilter : undefined;
 
-            // Use database endpoint for paginated data
-            const response = await stripeService.getTransactionsFromDb({
-                page: currentPage,
-                limit: 10,
-            });
+            // Fetch transactions and summary from database with filters
+            const [transactionsResponse, summaryResponse] = await Promise.all([
+                stripeService.getTransactionsFromDb({
+                    page: currentPage,
+                    limit: 10,
+                    status: statusParam,
+                    statusFilter: statusFilterParam,
+                    days: daysParam,
+                    dateFilterType: dateFilterTypeParam,
+                    dateFilterInput: dateFilterInputParam,
+                    dateFilterInput2: dateFilterInput2Param,
+                    amount: amountFilter !== null ? amountFilter : undefined,
+                    amountOperator:
+                        amountFilter !== null ? amountOperator : undefined,
+                    currency: currencyFilter || undefined,
+                    paymentMethod: paymentMethodFilter || undefined,
+                    customerId: customerIdFilter || undefined,
+                    email: emailFilter || undefined,
+                    cardBrand: cardBrandFilter || undefined,
+                    declineReason: declineReasonFilter || undefined,
+                    last4Digits: last4DigitsFilter || undefined,
+                }),
+                stripeService.getSummaryFromDb({
+                    status: statusParam,
+                    statusFilter: statusFilterParam,
+                    days: daysParam,
+                    dateFilterType: dateFilterTypeParam,
+                    dateFilterInput: dateFilterInputParam,
+                    dateFilterInput2: dateFilterInput2Param,
+                    amount: amountFilter !== null ? amountFilter : undefined,
+                    amountOperator:
+                        amountFilter !== null ? amountOperator : undefined,
+                    currency: currencyFilter || undefined,
+                    paymentMethod: paymentMethodFilter || undefined,
+                    customerId: customerIdFilter || undefined,
+                    email: emailFilter || undefined,
+                    cardBrand: cardBrandFilter || undefined,
+                    declineReason: declineReasonFilter || undefined,
+                    last4Digits: last4DigitsFilter || undefined,
+                }),
+            ]);
 
-            if (response.success) {
-                // Apply client-side filters for customer ID, email, and dispute amount
-                let filteredTransactions = response.data.transactions;
+            if (transactionsResponse.success) {
+                // Start with transactions from database (already filtered)
+                let filteredTransactions =
+                    transactionsResponse.data.transactions;
                 console.log(filteredTransactions);
 
-                // Apply customer ID filter
-                if (customerIdFilter) {
-                    filteredTransactions = filteredTransactions.filter(
-                        (transaction: StripeTransaction) =>
-                            transaction.customer?.id
-                                ?.toLowerCase()
-                                .includes(customerIdFilter.toLowerCase())
-                    );
-                }
-
-                // Apply email filter
-                if (emailFilter) {
-                    filteredTransactions = filteredTransactions.filter(
-                        (transaction: StripeTransaction) =>
-                            transaction.customer?.email
-                                ?.toLowerCase()
-                                .includes(emailFilter.toLowerCase())
-                    );
-                }
-
-                // Apply date filter
-                if (dateFilterType === 'in_last' && dateFilterDays) {
-                    const cutoffDate =
-                        Date.now() / 1000 - dateFilterDays * 24 * 60 * 60;
-                    filteredTransactions = filteredTransactions.filter(
-                        (transaction: StripeTransaction) =>
-                            transaction.created >= cutoffDate
-                    );
-                } else if (dateFilterType !== 'in_last' && dateFilterInput) {
-                    // Convert date string to Unix timestamp (start of day in UTC)
-                    const filterDate = new Date(dateFilterInput);
-                    filterDate.setHours(0, 0, 0, 0);
-                    const filterTimestamp = Math.floor(
-                        filterDate.getTime() / 1000
-                    );
-
-                    // End of day timestamp for "equal to" and "before or on"
-                    const filterDateEnd = new Date(dateFilterInput);
-                    filterDateEnd.setHours(23, 59, 59, 999);
-                    const filterTimestampEnd = Math.floor(
-                        filterDateEnd.getTime() / 1000
-                    );
-
-                    filteredTransactions = filteredTransactions.filter(
-                        (transaction: StripeTransaction) => {
-                            const transactionDate = transaction.created;
-                            switch (dateFilterType) {
-                                case 'equal_to':
-                                    return (
-                                        transactionDate >= filterTimestamp &&
-                                        transactionDate <= filterTimestampEnd
-                                    );
-                                case 'on_or_after':
-                                    return transactionDate >= filterTimestamp;
-                                case 'before_or_on':
-                                    return (
-                                        transactionDate <= filterTimestampEnd
-                                    );
-                                case 'between':
-                                    if (dateFilterInput2) {
-                                        const filterDate2 = new Date(
-                                            dateFilterInput2
-                                        );
-                                        filterDate2.setHours(23, 59, 59, 999);
-                                        const filterTimestamp2 = Math.floor(
-                                            filterDate2.getTime() / 1000
-                                        );
-                                        return (
-                                            transactionDate >=
-                                                filterTimestamp &&
-                                            transactionDate <= filterTimestamp2
-                                        );
-                                    }
-                                    return false;
-                                default:
-                                    return true;
-                            }
-                        }
-                    );
-                }
+                // Note: Most filters are now applied at the database level
+                // Only apply client-side filters for dispute-related fields that can't be filtered at DB level
 
                 // Apply dispute amount filter
                 // Note: dispute_amount may not be available on all transactions
@@ -504,40 +468,7 @@ const Payments: React.FC = () => {
                     );
                 }
 
-                // Apply card brand filter
-                if (cardBrandFilter) {
-                    filteredTransactions = filteredTransactions.filter(
-                        (transaction: StripeTransaction) => {
-                            return (
-                                transaction.payment_method?.card?.brand?.toLowerCase() ===
-                                cardBrandFilter.toLowerCase()
-                            );
-                        }
-                    );
-                }
-
-                // Apply decline reason filter
-                if (declineReasonFilter) {
-                    filteredTransactions = filteredTransactions.filter(
-                        (transaction: StripeTransaction) => {
-                            return transaction.decline_reason
-                                ?.toLowerCase()
-                                .includes(declineReasonFilter.toLowerCase());
-                        }
-                    );
-                }
-
-                // Apply last 4 digits filter
-                if (last4DigitsFilter) {
-                    filteredTransactions = filteredTransactions.filter(
-                        (transaction: StripeTransaction) => {
-                            return (
-                                transaction.payment_method?.card?.last4 ===
-                                last4DigitsFilter
-                            );
-                        }
-                    );
-                }
+                // Note: cardBrand, declineReason, and last4Digits filters are now applied at database level
 
                 // Apply disputed on filter
                 if (disputedOnFilter !== null) {
@@ -620,31 +551,38 @@ const Payments: React.FC = () => {
                 // Always replace data to avoid duplicates
                 // Backend handles pagination, so we just show what it returns
                 setTransactions(filteredTransactions);
-                setHasMore(response.data.hasMore);
-                // Calculate summary from transactions (basic implementation)
-                const summaryData = {
-                    total: response.data.total,
-                    succeeded: filteredTransactions.filter(
-                        (t: StripeTransaction) => t.status === 'succeeded'
-                    ).length,
-                    refunded: filteredTransactions.filter(
-                        (t: StripeTransaction) =>
-                            t.status === 'refunded' || t.refunded
-                    ).length,
-                    disputed: 0, // Will be calculated if needed
-                    failed: filteredTransactions.filter(
-                        (t: StripeTransaction) => t.status === 'failed'
-                    ).length,
-                    uncaptured: filteredTransactions.filter(
-                        (t: StripeTransaction) => t.status === 'pending'
-                    ).length,
-                };
-                setSummary(summaryData);
+                setHasMore(transactionsResponse.data.hasMore);
+
+                // Use summary from database (already filtered)
+                if (summaryResponse.success) {
+                    setSummary(summaryResponse.data);
+                } else {
+                    // Fallback: calculate from current page if summary fetch fails
+                    const summaryData = {
+                        total: transactionsResponse.data.total,
+                        succeeded: filteredTransactions.filter(
+                            (t: StripeTransaction) => t.status === 'succeeded'
+                        ).length,
+                        refunded: filteredTransactions.filter(
+                            (t: StripeTransaction) =>
+                                t.status === 'refunded' || t.refunded
+                        ).length,
+                        disputed: 0,
+                        failed: filteredTransactions.filter(
+                            (t: StripeTransaction) => t.status === 'failed'
+                        ).length,
+                        uncaptured: filteredTransactions.filter(
+                            (t: StripeTransaction) => t.status === 'pending'
+                        ).length,
+                    };
+                    setSummary(summaryData);
+                }
+
                 console.log(
-                    `Payments: Received ${response.data.transactions.length} transactions from database, filtered to ${filteredTransactions.length}, total: ${response.data.total}, has_more: ${response.data.hasMore}, page: ${response.data.page}`
+                    `Payments: Received ${transactionsResponse.data.transactions.length} transactions from database, total: ${transactionsResponse.data.total}, has_more: ${transactionsResponse.data.hasMore}, page: ${transactionsResponse.data.page}`
                 );
             } else {
-                setError(response.message);
+                setError(transactionsResponse.message);
             }
         } catch (err) {
             setError('Failed to fetch data');

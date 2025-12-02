@@ -268,19 +268,109 @@ export class StripeController {
     @Request() req: any,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Query('status') status?: string,
+    @Query('statusFilter') statusFilter?: string,
+    @Query('days') days?: string,
+    @Query('dateFilterType') dateFilterType?: string,
+    @Query('dateFilterInput') dateFilterInput?: string,
+    @Query('dateFilterInput2') dateFilterInput2?: string,
+    @Query('amount') amount?: string,
+    @Query('amountOperator') amountOperator?: string,
+    @Query('currency') currency?: string,
+    @Query('paymentMethod') paymentMethod?: string,
+    @Query('customerId') customerId?: string,
+    @Query('email') email?: string,
+    @Query('cardBrand') cardBrand?: string,
+    @Query('declineReason') declineReason?: string,
+    @Query('last4Digits') last4Digits?: string,
   ) {
     try {
       const userId = this.getUserId(req);
       const pageNum = page ? parseInt(page) : 1;
       const limitNum = limit ? parseInt(limit) : 10;
+      const statusFilterArray = statusFilter
+        ? statusFilter.split(',').map((s) => s.trim()).filter((s) => s.length > 0)
+        : undefined;
+      
       return await this.stripeDbService.getCombinedTransactions(
         userId,
         pageNum,
         limitNum,
+        {
+          status,
+          statusFilter: statusFilterArray,
+          days: days ? parseInt(days) : undefined,
+          dateFilterType,
+          dateFilterInput,
+          dateFilterInput2,
+          amount: amount ? parseFloat(amount) : undefined,
+          amountOperator,
+          currency,
+          paymentMethod,
+          customerId,
+          email,
+          cardBrand,
+          declineReason,
+          last4Digits,
+        },
       );
     } catch (error: any) {
       throw new HttpException(
         error.message || 'Failed to fetch transactions',
+        error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Get('transactions-db-summary')
+  @UseGuards(AuthGuard('jwt'))
+  async getTransactionsSummaryFromDb(
+    @Request() req: any,
+    @Query('status') status?: string,
+    @Query('statusFilter') statusFilter?: string,
+    @Query('days') days?: string,
+    @Query('dateFilterType') dateFilterType?: string,
+    @Query('dateFilterInput') dateFilterInput?: string,
+    @Query('dateFilterInput2') dateFilterInput2?: string,
+    @Query('amount') amount?: string,
+    @Query('amountOperator') amountOperator?: string,
+    @Query('currency') currency?: string,
+    @Query('paymentMethod') paymentMethod?: string,
+    @Query('customerId') customerId?: string,
+    @Query('email') email?: string,
+    @Query('cardBrand') cardBrand?: string,
+    @Query('declineReason') declineReason?: string,
+    @Query('last4Digits') last4Digits?: string,
+  ) {
+    try {
+      const userId = this.getUserId(req);
+      const statusFilterArray = statusFilter
+        ? statusFilter.split(',').map((s) => s.trim()).filter((s) => s.length > 0)
+        : undefined;
+      
+      return await this.stripeDbService.getSummary(
+        userId,
+        {
+          status,
+          statusFilter: statusFilterArray,
+          days: days ? parseInt(days) : undefined,
+          dateFilterType,
+          dateFilterInput,
+          dateFilterInput2,
+          amount: amount ? parseFloat(amount) : undefined,
+          amountOperator,
+          currency,
+          paymentMethod,
+          customerId,
+          email,
+          cardBrand,
+          declineReason,
+          last4Digits,
+        },
+      );
+    } catch (error: any) {
+      throw new HttpException(
+        error.message || 'Failed to fetch summary',
         error.status || HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
