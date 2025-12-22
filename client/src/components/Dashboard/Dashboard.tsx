@@ -19,8 +19,8 @@ import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import {
-    LineChart,
-    Line,
+    AreaChart,
+    Area,
     XAxis,
     YAxis,
     CartesianGrid,
@@ -105,6 +105,127 @@ const Dashboard: React.FC = () => {
     const [volumeType, setVolumeType] = useState<VolumeType>('net');
     const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
 
+    // Process volume data to show cumulative values and fill missing time periods (like Stripe)
+    const processVolumeDataForChart = useCallback(
+        (
+            data: Array<{
+                time: string;
+                gross: number;
+                net: number;
+                count: number;
+                newCustomers: number;
+            }>,
+            period: {
+                days: number;
+                groupBy: 'hour' | 'day';
+                startTime: number;
+                endTime: number;
+            }
+        ) => {
+            if (data.length === 0) {
+                // If no data, still generate empty time periods for the full range
+                const allTimePeriods: string[] = [];
+                const startDate = new Date(period.startTime * 1000);
+                const endDate = new Date(period.endTime * 1000);
+
+                if (period.groupBy === 'hour') {
+                    const current = new Date(startDate);
+                    current.setMinutes(0, 0, 0);
+
+                    while (current <= endDate) {
+                        const dateStr = current.toISOString().split('T')[0];
+                        const hour = current.getHours();
+                        const timeKey = `${dateStr} ${hour.toString().padStart(2, '0')}:00`;
+                        allTimePeriods.push(timeKey);
+                        current.setHours(current.getHours() + 1);
+                    }
+                } else {
+                    const current = new Date(startDate);
+                    current.setHours(0, 0, 0, 0);
+
+                    while (current <= endDate) {
+                        const timeKey = current.toISOString().split('T')[0];
+                        allTimePeriods.push(timeKey);
+                        current.setDate(current.getDate() + 1);
+                    }
+                }
+
+                return allTimePeriods.map(time => ({
+                    time,
+                    gross: 0,
+                    net: 0,
+                    count: 0,
+                    newCustomers: 0,
+                }));
+            }
+
+            const groupBy = period.groupBy;
+            const dataMap = new Map<string, (typeof data)[0]>();
+
+            // Create a map of existing data
+            data.forEach(item => {
+                dataMap.set(item.time, item);
+            });
+
+            // Generate all time periods in the range
+            const allTimePeriods: string[] = [];
+            const startDate = new Date(period.startTime * 1000);
+            const endDate = new Date(period.endTime * 1000);
+
+            if (groupBy === 'hour') {
+                // Generate all hours in the range
+                const current = new Date(startDate);
+                current.setMinutes(0, 0, 0);
+
+                while (current <= endDate) {
+                    const dateStr = current.toISOString().split('T')[0];
+                    const hour = current.getHours();
+                    const timeKey = `${dateStr} ${hour.toString().padStart(2, '0')}:00`;
+                    allTimePeriods.push(timeKey);
+                    current.setHours(current.getHours() + 1);
+                }
+            } else {
+                // Generate all days in the range
+                const current = new Date(startDate);
+                current.setHours(0, 0, 0, 0);
+
+                while (current <= endDate) {
+                    const timeKey = current.toISOString().split('T')[0];
+                    allTimePeriods.push(timeKey);
+                    current.setDate(current.getDate() + 1);
+                }
+            }
+
+            // Build cumulative data
+            let cumulativeGross = 0;
+            let cumulativeNet = 0;
+            let cumulativeCount = 0;
+            let cumulativeNewCustomers = 0;
+
+            const processedData = allTimePeriods.map(time => {
+                const existing = dataMap.get(time);
+
+                if (existing) {
+                    cumulativeGross += existing.gross;
+                    cumulativeNet += existing.net;
+                    cumulativeCount += existing.count;
+                    cumulativeNewCustomers += existing.newCustomers;
+                }
+
+                return {
+                    time,
+                    gross: cumulativeGross,
+                    net: cumulativeNet,
+                    count: cumulativeCount,
+                    newCustomers: cumulativeNewCustomers,
+                };
+            });
+
+            return processedData;
+        },
+        []
+    );
+
     const fetchVolumeData = useCallback(async () => {
         try {
             setLoading(true);
@@ -133,7 +254,12 @@ const Dashboard: React.FC = () => {
             const response = await stripeService.getVolumeData(params);
 
             if (response.success) {
-                setVolumeData(response.data.data);
+                // Process data to show cumulative volume (like Stripe)
+                const processedData = processVolumeDataForChart(
+                    response.data.data,
+                    response.data.period
+                );
+                setVolumeData(processedData);
                 setTotals(response.data.totals);
                 setLastUpdate(new Date());
             } else {
@@ -145,7 +271,7 @@ const Dashboard: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    }, [selectedDays, selectedDate]);
+    }, [selectedDays, selectedDate, processVolumeDataForChart]);
 
     useEffect(() => {
         fetchVolumeData();
@@ -241,7 +367,7 @@ const Dashboard: React.FC = () => {
                                     label="Period"
                                     onChange={e => {
                                         const days = parseInt(
-                                            e.target.value as string
+                                            String(e.target.value)
                                         );
                                         setSelectedDays(days);
                                         // Set date to today when using preset period
@@ -441,24 +567,86 @@ const Dashboard: React.FC = () => {
                                 </Box>
                             ) : (
                                 <ResponsiveContainer width="100%" height={400}>
-                                    <LineChart
+                                    <AreaChart
                                         data={volumeData}
                                         margin={{
-                                            top: 5,
-                                            right: 30,
-                                            left: 20,
-                                            bottom: 5,
+                                            top: 10,
+                                            right: 10,
+                                            left: 0,
+                                            bottom: 0,
                                         }}
                                     >
+                                        <defs>
+                                            <linearGradient
+                                                id="colorGross"
+                                                x1="0"
+                                                y1="0"
+                                                x2="0"
+                                                y2="1"
+                                            >
+                                                <stop
+                                                    offset="5%"
+                                                    stopColor="#635BFF"
+                                                    stopOpacity={0.3}
+                                                />
+                                                <stop
+                                                    offset="95%"
+                                                    stopColor="#635BFF"
+                                                    stopOpacity={0}
+                                                />
+                                            </linearGradient>
+                                            <linearGradient
+                                                id="colorNet"
+                                                x1="0"
+                                                y1="0"
+                                                x2="0"
+                                                y2="1"
+                                            >
+                                                <stop
+                                                    offset="5%"
+                                                    stopColor="#00D924"
+                                                    stopOpacity={0.3}
+                                                />
+                                                <stop
+                                                    offset="95%"
+                                                    stopColor="#00D924"
+                                                    stopOpacity={0}
+                                                />
+                                            </linearGradient>
+                                            <linearGradient
+                                                id="colorNewCustomers"
+                                                x1="0"
+                                                y1="0"
+                                                x2="0"
+                                                y2="1"
+                                            >
+                                                <stop
+                                                    offset="5%"
+                                                    stopColor="#00A1FF"
+                                                    stopOpacity={0.3}
+                                                />
+                                                <stop
+                                                    offset="95%"
+                                                    stopColor="#00A1FF"
+                                                    stopOpacity={0}
+                                                />
+                                            </linearGradient>
+                                        </defs>
                                         <CartesianGrid
                                             strokeDasharray="3 3"
-                                            stroke="#e2e8f0"
+                                            stroke="#F0F0F0"
+                                            vertical={false}
                                         />
                                         <XAxis
                                             dataKey="time"
                                             tickFormatter={formatXAxisLabel}
-                                            stroke="#6b7280"
-                                            style={{ fontSize: '0.75rem' }}
+                                            stroke="#6B7280"
+                                            style={{
+                                                fontSize: '0.75rem',
+                                                fontWeight: 400,
+                                            }}
+                                            tickLine={false}
+                                            axisLine={false}
                                         />
                                         <YAxis
                                             tickFormatter={value =>
@@ -466,15 +654,26 @@ const Dashboard: React.FC = () => {
                                                     ? value.toString()
                                                     : formatCurrency(value)
                                             }
-                                            stroke="#6b7280"
-                                            style={{ fontSize: '0.75rem' }}
+                                            stroke="#6B7280"
+                                            style={{
+                                                fontSize: '0.75rem',
+                                                fontWeight: 400,
+                                            }}
+                                            tickLine={false}
+                                            axisLine={false}
+                                            width={60}
                                         />
                                         <Tooltip
-                                            formatter={(value: number) =>
+                                            formatter={(value: number) => [
                                                 volumeType === 'newCustomers'
                                                     ? value.toString()
-                                                    : formatCurrency(value)
-                                            }
+                                                    : formatCurrency(value),
+                                                volumeType === 'gross'
+                                                    ? 'Gross Volume'
+                                                    : volumeType === 'net'
+                                                      ? 'Net Volume'
+                                                      : 'New Customer Onboarding',
+                                            ]}
                                             labelFormatter={label => {
                                                 return formatTimeLabel(
                                                     label,
@@ -483,45 +682,83 @@ const Dashboard: React.FC = () => {
                                             }}
                                             contentStyle={{
                                                 backgroundColor: '#ffffff',
-                                                border: '1px solid #e2e8f0',
+                                                border: '1px solid #E5E7EB',
                                                 borderRadius: '8px',
+                                                padding: '8px 12px',
+                                                boxShadow:
+                                                    '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                                            }}
+                                            labelStyle={{
+                                                color: '#6B7280',
+                                                fontSize: '0.75rem',
+                                                fontWeight: 500,
+                                                marginBottom: '4px',
+                                            }}
+                                            itemStyle={{
+                                                color: '#111827',
+                                                fontSize: '0.875rem',
+                                                fontWeight: 600,
                                             }}
                                         />
-                                        <Legend />
+                                        <Legend
+                                            wrapperStyle={{
+                                                paddingTop: '20px',
+                                                fontSize: '0.875rem',
+                                            }}
+                                            iconType="line"
+                                        />
                                         {volumeType === 'gross' && (
-                                            <Line
-                                                type="monotone"
+                                            <Area
+                                                type="stepAfter"
                                                 dataKey="gross"
                                                 name="Gross Volume"
-                                                stroke="#7c3aed"
+                                                stroke="#635BFF"
                                                 strokeWidth={2}
-                                                dot={{ r: 3 }}
-                                                activeDot={{ r: 5 }}
+                                                fill="url(#colorGross)"
+                                                dot={false}
+                                                activeDot={{
+                                                    r: 4,
+                                                    fill: '#635BFF',
+                                                    strokeWidth: 2,
+                                                    stroke: '#ffffff',
+                                                }}
                                             />
                                         )}
                                         {volumeType === 'net' && (
-                                            <Line
-                                                type="monotone"
+                                            <Area
+                                                type="stepAfter"
                                                 dataKey="net"
                                                 name="Net Volume"
-                                                stroke="#10b981"
+                                                stroke="#00D924"
                                                 strokeWidth={2}
-                                                dot={{ r: 3 }}
-                                                activeDot={{ r: 5 }}
+                                                fill="url(#colorNet)"
+                                                dot={false}
+                                                activeDot={{
+                                                    r: 4,
+                                                    fill: '#00D924',
+                                                    strokeWidth: 2,
+                                                    stroke: '#ffffff',
+                                                }}
                                             />
                                         )}
                                         {volumeType === 'newCustomers' && (
-                                            <Line
-                                                type="monotone"
+                                            <Area
+                                                type="stepAfter"
                                                 dataKey="newCustomers"
                                                 name="New Customer Onboarding"
-                                                stroke="#3b82f6"
+                                                stroke="#00A1FF"
                                                 strokeWidth={2}
-                                                dot={{ r: 3 }}
-                                                activeDot={{ r: 5 }}
+                                                fill="url(#colorNewCustomers)"
+                                                dot={false}
+                                                activeDot={{
+                                                    r: 4,
+                                                    fill: '#00A1FF',
+                                                    strokeWidth: 2,
+                                                    stroke: '#ffffff',
+                                                }}
                                             />
                                         )}
-                                    </LineChart>
+                                    </AreaChart>
                                 </ResponsiveContainer>
                             )}
                         </ChartCardContent>
