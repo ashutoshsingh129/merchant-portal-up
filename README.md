@@ -1,5 +1,7 @@
 # Stripe Merchant Portal
 
+> **⚠️ Important:** The current working branch is `deployment`. Make sure you are on this branch before starting development.
+
 A full-stack application for managing Stripe payments, transactions, payouts, and customers. Built with React (TypeScript) frontend and NestJS backend, following Clean Architecture principles.
 
 ## Table of Contents
@@ -80,7 +82,15 @@ git clone <repository-url>
 cd merchant-portal-up
 ```
 
-### 2. Install Dependencies
+### 2. Checkout the Working Branch
+
+```bash
+git checkout deployment
+```
+
+> **Note:** The `deployment` branch is the current working branch with the latest stable code.
+
+### 3. Install Dependencies
 
 Install root dependencies (for running both apps concurrently):
 ```bash
@@ -101,7 +111,7 @@ npm install
 cd ..
 ```
 
-### 3. Database Setup
+### 4. Database Setup
 
 1. **Create PostgreSQL Database**:
    ```sql
@@ -210,6 +220,48 @@ REACT_APP_VERSION=1.0.0
    # Edit .env with your values
    ```
 
+## Quick Start
+
+After installation, follow these steps to get the project running:
+
+1. **Checkout the deployment branch:**
+   ```bash
+   git checkout deployment
+   ```
+
+2. **Set up environment variables:**
+   - Create `.env` file in `server/` directory (see [Environment Variables](#environment-variables))
+   - Create `.env` file in `client/` directory (see [Environment Variables](#environment-variables))
+
+3. **Start PostgreSQL database** (if not running):
+   ```bash
+   # macOS (using Homebrew)
+   brew services start postgresql
+   
+   # Linux
+   sudo systemctl start postgresql
+   
+   # Or use your preferred method
+   ```
+
+4. **Create the database:**
+   ```bash
+   psql -U postgres
+   CREATE DATABASE stripe_merchant_portal;
+   \q
+   ```
+
+5. **Run the application:**
+   ```bash
+   # From root directory
+   npm run dev
+   ```
+
+6. **Access the application:**
+   - Frontend: http://localhost:3000
+   - Backend API: http://localhost:5000/api
+   - Login with default credentials: `admin` / `admin123`
+
 ## Running the Application
 
 ### Development Mode
@@ -249,9 +301,65 @@ npm run start:prod
 **Build Frontend:**
 ```bash
 cd client
-npm run build
+npm run build:prod
 # Serve the build folder using a static file server (nginx, serve, etc.)
+# Or use: npx serve -s build
 ```
+
+**Alternative Frontend Build Options:**
+```bash
+cd client
+npm run build:dev      # Build for development
+npm run build:staging  # Build for staging
+npm run build:prod     # Build for production (recommended)
+```
+
+## Complete Commands Reference
+
+### Root Directory Commands
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Run both backend and frontend in development mode concurrently |
+
+### Backend Commands (from `server/` directory)
+
+| Command | Description |
+|---------|-------------|
+| `npm run start:dev` | Start in development mode with watch (auto-reload) |
+| `npm run start` | Start in production mode (no watch) |
+| `npm run start:debug` | Start in debug mode with watch |
+| `npm run start:prod` | Start production build (run after `npm run build`) |
+| `npm run build` | Build for production |
+| `npm run test` | Run unit tests |
+| `npm run test:watch` | Run tests in watch mode |
+| `npm run test:cov` | Run tests with coverage report |
+| `npm run test:debug` | Run tests in debug mode |
+| `npm run test:e2e` | Run end-to-end tests |
+| `npm run lint` | Run ESLint and auto-fix issues |
+| `npm run format` | Format code with Prettier |
+
+### Frontend Commands (from `client/` directory)
+
+| Command | Description |
+|---------|-------------|
+| `npm start` | Start development server (with memory optimization) |
+| `npm run start:dev` | Start with development environment variables |
+| `npm run start:staging` | Start with staging environment |
+| `npm run start:prod` | Start with production environment |
+| `npm run build` | Build for production (default) |
+| `npm run build:dev` | Build for development environment |
+| `npm run build:staging` | Build for staging environment |
+| `npm run build:prod` | Build for production environment |
+| `npm test` | Run tests in watch mode |
+| `npm run test:coverage` | Run tests with coverage report |
+| `npm run lint` | Run ESLint |
+| `npm run lint:fix` | Fix ESLint errors automatically |
+| `npm run format` | Format code with Prettier |
+| `npm run format:check` | Check code formatting without fixing |
+| `npm run env:setup` | Copy .env-sample to .env |
+| `npm run env:check` | Check current environment configuration |
+| `npm run eject` | Eject from Create React App (irreversible) |
 
 ## Development Workflow
 
@@ -272,10 +380,17 @@ npm run build
 
 3. **Available Scripts:**
    - `npm run start:dev` - Start in development mode with watch
+   - `npm run start` - Start in production mode (no watch)
+   - `npm run start:debug` - Start in debug mode with watch
+   - `npm run start:prod` - Start production build (after build)
    - `npm run build` - Build for production
-   - `npm run start:prod` - Start production build
    - `npm run test` - Run unit tests
-   - `npm run lint` - Run ESLint
+   - `npm run test:watch` - Run tests in watch mode
+   - `npm run test:cov` - Run tests with coverage report
+   - `npm run test:debug` - Run tests in debug mode
+   - `npm run test:e2e` - Run end-to-end tests
+   - `npm run lint` - Run ESLint and auto-fix issues
+   - `npm run format` - Format code with Prettier
 
 ### Frontend Development
 
@@ -291,11 +406,23 @@ npm run build
    - Hot reload on file changes
 
 3. **Available Scripts:**
-   - `npm start` - Start development server
+   - `npm start` - Start development server (with memory optimization)
+   - `npm run start:dev` - Start development server with environment variables
+   - `npm run start:staging` - Start with staging environment
+   - `npm run start:prod` - Start with production environment
    - `npm run build` - Build for production
-   - `npm test` - Run tests
+   - `npm run build:dev` - Build for development environment
+   - `npm run build:staging` - Build for staging environment
+   - `npm run build:prod` - Build for production environment
+   - `npm test` - Run tests in watch mode
+   - `npm run test:coverage` - Run tests with coverage report
    - `npm run lint` - Run ESLint
-   - `npm run lint:fix` - Fix ESLint errors
+   - `npm run lint:fix` - Fix ESLint errors automatically
+   - `npm run format` - Format code with Prettier
+   - `npm run format:check` - Check code formatting without fixing
+   - `npm run env:setup` - Copy .env-sample to .env
+   - `npm run env:check` - Check current environment configuration
+   - `npm run eject` - Eject from Create React App (irreversible)
 
 ## Database Setup
 
@@ -439,6 +566,29 @@ The API includes:
 - Check backend logs for sync errors
 - Try manual sync via API endpoints
 
+## Future Improvements
+
+The following improvements are planned for future releases:
+
+### Security Enhancements
+
+1. **Encrypt Login Credentials in Network Requests**
+   - **Current Issue**: Email and password are visible in the browser network tab when making login requests
+   - **Future Solution**: Implement client-side encryption for login credentials before sending them to the backend
+   - **Implementation**: Use encryption libraries (e.g., crypto-js) to encrypt credentials on the client side, and decrypt on the server side
+   - **Priority**: High (Security)
+
+### Additional Planned Features
+
+- Enhanced error handling and user feedback
+- Real-time notifications for transaction updates
+- Advanced reporting and analytics
+- Multi-factor authentication (MFA)
+- API rate limiting and throttling
+- Enhanced audit logging
+- Webhook support for Stripe events
+- Export functionality for transactions and reports
+
 ## Additional Resources
 
 - [Stripe API Documentation](https://stripe.com/docs/api)
@@ -449,4 +599,5 @@ The API includes:
 ## License
 
 This project is licensed under the MIT License.
+
 

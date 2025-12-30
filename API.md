@@ -1367,3 +1367,4 @@ The auth service (Axios) automatically handles 401 errors by clearing tokens and
 
 7. **Rate Limits**: Be aware of Stripe API rate limits (100 requests per second). The system implements pagination and batching to stay within limits.
 
+
